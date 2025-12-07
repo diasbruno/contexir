@@ -1,6 +1,6 @@
 # test/contexir_test.exs
 defmodule ContexirTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import ExUnit.CaptureIO
   import Contexir.Macros
   require Contexir
@@ -18,9 +18,21 @@ defmodule ContexirTest do
 
   deflayer GiveHundred do
     defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
-      IO.inspect("giving hundred dollars")
+      IO.inspect("a around")
       %{balance: b} = acc
-      continue(Account, :withdraw, [%{balance: b + 100}, amt, ctx])
+      result = continue(Account, :withdraw, [%{balance: b + 100}, amt, ctx])
+      IO.inspect("a around end")
+      result
+    end
+  end
+
+  deflayer TakeTenPercent do
+    defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
+      IO.inspect("b around")
+      %{balance: b} = acc
+      result = continue(Account, :withdraw, [%{balance: (b * 0.9)}, amt, ctx])
+      IO.inspect("b around end")
+      result
     end
   end
 
@@ -28,14 +40,24 @@ defmodule ContexirTest do
   # Tests
   #
 
+  # @tag :skip
   test "plain function call" do
     %{balance: b} = ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
     assert b == 60
   end
 
+  # @tag :skip
   test "run simple layer" do
-    %{balance: b} = Contexir.with_layers [ContexirTest.GiveHundred],
+    layers = [ContexirTest.GiveHundred]
+    %{balance: b} = Contexir.with_layers layers,
       ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
     assert b == 200
+  end
+
+  test "run 2 layers" do
+    layers = [ContexirTest.GiveHundred, ContexirTest.TakeTenPercent]
+    %{balance: b} = Contexir.with_layers layers,
+      ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
+    assert b == 180
   end
 end

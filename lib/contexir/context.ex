@@ -11,8 +11,6 @@ defmodule Contexir.Context do
     expanded = Enum.flat_map(layers, &expand_layer/1)
     Process.put(:active_layers, expanded ++ old)
 
-    IO.inspect(fun)
-
     try do
       Contexir.Dispatch.call(mod, fun, args)
     after

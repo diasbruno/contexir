@@ -65,6 +65,9 @@ defmodule Contexir.Dispatch do
       Contexir.Context.active_layers()
       |> Enum.filter(&predicate_active?(&1, module, fun, args, ctx))
 
+    IO.inspect("call current layers")
+    IO.inspect(layers)
+
     classify_and_run(layers, module, fun, args)
   end
 
@@ -100,13 +103,13 @@ defmodule Contexir.Dispatch do
   end
 
   defp run_chain([], module, fun, args) do
-    IO.inspect(module)
+    IO.inspect("chain #{module}")
     ctx = Contexir.Context.get_ctx()
     apply(module, fun, args ++ [ctx])
   end
 
   defp run_chain([layer | _rest], module, fun, args) do
-    IO.inspect(layer)
+    IO.inspect("chain #{layer}")
     ctx = Contexir.Context.get_ctx()
     apply(layer, fun, [module | args] ++ [ctx])
   end
@@ -130,6 +133,7 @@ defmodule Contexir.Dispatch do
 
   def continue(module, fun, args) do
     layers = Contexir.Context.active_layers()
+    IO.inspect("continue current layers")
     IO.inspect(layers)
     [_ | rest] = layers
     Process.put(:active_layers, rest)
