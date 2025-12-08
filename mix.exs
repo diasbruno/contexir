@@ -20,6 +20,16 @@ defmodule Contexir.MixProject do
     "Context-oriented programming in Elixir"
   end
 
+  defp package() do
+    [
+      name: "contexir",
+      files: ~w(lib priv .formatter.exs mix.exs README* readme* LICENSE*
+        license* CHANGELOG* changelog* src),
+      licenses: ["Unlicense"],
+      links: %{"GitHub" => "https://github.com/diasbruno/contexir"}
+    ]
+  end
+
   def application do
     []
   end
