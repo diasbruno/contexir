@@ -1,5 +1,7 @@
 # Contexir
 
+![contexir](https://raw.githubusercontent.com/diasbruno/contexir/refs/heads/development/assets/contexir.png "contexir")
+
 > 🧠 Context-Oriented Programming for Elixir — composable layers for dynamic, context-aware behavior.
 
 **Contexir** brings *Context-Oriented Programming (COP)* semantics to Elixir.
