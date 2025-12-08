@@ -34,6 +34,8 @@ defmodule Contexir.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:ex_doc, "0.39.2", only: :dev, runtime: false}
+    ]
   end
 end
