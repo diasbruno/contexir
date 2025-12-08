@@ -28,7 +28,7 @@ defmodule Contexir.Macros do
        ]}
      ]} = predicate
 
-    m = quote do
+    quote do
       defmodule unquote(name) do
         import Contexir.Macros
 
@@ -44,9 +44,6 @@ defmodule Contexir.Macros do
         def has_mode_defined(_mod, _fun, _mode), do: false
       end
     end
-
-    IO.puts(Macro.to_string(m))
-    m
   end
 
   # Define a partial method with optional mode
@@ -57,7 +54,7 @@ defmodule Contexir.Macros do
 
     mode = Keyword.get(opts, :mode, :around)
 
-    m = quote do
+    quote do
       def unquote(fun)(unquote(the_module), unquote(mode), unquote_splicing(args)) do
         import Contexir.Dispatch, only: [continue: 3]
         unquote(body)
@@ -65,9 +62,6 @@ defmodule Contexir.Macros do
 
       def has_mode_defined(unquote(the_module), unquote(fun), unquote(mode)), do: true
     end
-
-    IO.puts(Macro.to_string(m))
-    m
   end
 
   # Define a grouped (composite) layer
