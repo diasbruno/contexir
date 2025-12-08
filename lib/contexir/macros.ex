@@ -28,7 +28,7 @@ defmodule Contexir.Macros do
        ]}
      ]} = predicate
 
-    quote do
+    m = quote do
       defmodule unquote(name) do
         import Contexir.Macros
 
@@ -37,24 +37,37 @@ defmodule Contexir.Macros do
         end
 
         unquote(block)
+
+        @doc """
+        Default case.
+        """
+        def has_mode_defined(_mod, _fun, _mode), do: false
       end
     end
+
+    IO.puts(Macro.to_string(m))
+    m
   end
 
   # Define a partial method with optional mode
   defmacro defpartial(signature, opts \\ [], do: body) do
     {{:., _x, [{_y, _m, mod}, fun]}, _z, args} = signature
 
+    the_module = Module.concat(mod)
+
     mode = Keyword.get(opts, :mode, :around)
 
-    quote do
-      def unquote(fun)(unquote(Module.concat(mod)), unquote_splicing(args)) do
+    m = quote do
+      def unquote(fun)(unquote(the_module), unquote(mode), unquote_splicing(args)) do
         import Contexir.Dispatch, only: [continue: 3]
         unquote(body)
       end
 
-      def __partial_mode__, do: {unquote(fun), unquote(mode)}
+      def has_mode_defined(unquote(the_module), unquote(fun), unquote(mode)), do: true
     end
+
+    IO.puts(Macro.to_string(m))
+    m
   end
 
   # Define a grouped (composite) layer

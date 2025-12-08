@@ -42,6 +42,56 @@ defmodule Contexir.Dispatch do
   (defmethod compute :after ((x extend-example))
   (format t "b After~%"))
 
+  """
+
+  defp extract_ctx(args) do
+    case args do
+      [] -> {[], nil}
+      _  -> Enum.split(args, length(args) - 1)
+    end
+  end
+
+  @doc """
+  Check whether a layer is inactive.
+  """
+  defp predicate_active?(layer, module, fun, args, ctx) do
+    layer.__predicate__(module, fun, args, ctx)
+  end
+
+  @doc """
+  Returns a tuple-4 with:
+  - Layers with aroundg
+  - with before
+  - the primary module
+  - with after
+  """
+  defp build_plan(layers, module, fun) do
+    {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
+      aa = if layer.has_mode_defined(module, fun, :around), do: [layer | a], else: a
+      bb = if layer.has_mode_defined(module, fun, :before), do: [layer | b], else: b
+      cc = if layer.has_mode_defined(module, fun, :after), do: [layer | c], else: c
+      {aa, bb, cc}
+    end)
+
+    {Enum.reverse(a), Enum.reverse(b), c}
+  end
+
+  def call(module, fun, args) do
+    {args, ctx} = extract_ctx(args)
+    Contexir.Context.set_ctx(ctx)
+
+    layers =
+      Contexir.Context.active_layers()
+      |> Enum.filter(&predicate_active?(&1, module, fun, args, ctx))
+
+    execution_plan = build_plan(layers, module, fun)
+
+    Process.put(:active_layers, execution_plan)
+
+    continue(module, fun, args)
+  end
+
+  """
   b Around (most specific)
   a Around (most specific)
   b Before
@@ -52,93 +102,26 @@ defmodule Contexir.Dispatch do
   a Around (end)
   b Around (end)
   """
-  def call(module, fun, args) do
-    {args, [ctx]} = extract_ctx(args)
-    Contexir.Context.set_ctx(ctx)
-
-    # NOTE(dias): We are running all the predicates before executing them.
-    # Should it run the predicate after each layer?
-    # Or add another predicate so we can "disable globally"
-    # or "dynamic disable" in the depending on the current environment
-    # and arguments the layer will be executed?
-    layers =
-      Contexir.Context.active_layers()
-      |> Enum.filter(&predicate_active?(&1, module, fun, args, ctx))
-
-    IO.inspect("call current layers")
-    IO.inspect(layers)
-
-    classify_and_run(layers, module, fun, args)
-  end
-
-  # Evaluate predicate for a given layer
-  defp predicate_active?(layer, module, fun, args, ctx) do
-    layer.__predicate__(module, fun, args, ctx)
-  end
-
-  # Classify layers by mode and execute
-  defp classify_and_run(layers, module, fun, args) do
-    {beforefn, aroundfn, afterfn} =
-      Enum.reduce(layers, {[], [], []}, fn layer, {b, a, af} ->
-        case partial_mode(layer, fun) do
-          :before -> {[layer | b], a, af}
-          :after  -> {b, a, [layer | af]}
-          _       -> {b, [layer | a], af}
-        end
-      end)
-
-    ctx = Contexir.Context.get_ctx()
-
-    result = run_list_fn(Enum.reverse(aroundfn), module, fun, args)
-
-    result
-  end
-
-  def run_list_fn([], _module, _fun, args) do
-      List.first(args)
-  end
-
-  def run_list_fn(fns, module, fun, args) do
-    run_chain(fns, module, fun, args)
-  end
-
-  defp run_chain([], module, fun, args) do
-    IO.inspect("chain #{module}")
-    ctx = Contexir.Context.get_ctx()
-    apply(module, fun, args ++ [ctx])
-  end
-
-  defp run_chain([layer | _rest], module, fun, args) do
-    IO.inspect("chain #{layer}")
-    ctx = Contexir.Context.get_ctx()
-    apply(layer, fun, [module | args] ++ [ctx])
-  end
-
-
-  defp partial_mode(layer, fun) do
-    if function_exported?(layer, :__partial_mode__, 0) do
-      {f, mode} = layer.__partial_mode__()
-      if f == fun, do: mode, else: :around
-    else
-      :around
-    end
-  end
-
-  defp extract_ctx(args) do
-    case args do
-      [] -> {[], nil}
-      _  -> Enum.split(args, length(args) - 1)
-    end
-  end
 
   def continue(module, fun, args) do
-    layers = Contexir.Context.active_layers()
-    IO.inspect("continue current layers")
-    IO.inspect(layers)
-    [_ | rest] = layers
-    Process.put(:active_layers, rest)
-    result = call(module, fun, args)
-    Process.put(:active_layers, layers)
-    result
+    case Process.get(:active_layers) do
+      {[], b, c} ->
+        Enum.each b, fn layer ->
+          ctx = Contexir.Context.get_ctx()
+          apply(layer, fun, [module, :before | args] ++ [ctx])
+        end
+        ctx = Contexir.Context.get_ctx()
+        result = apply(module, fun, args ++ [ctx])
+        Enum.each b, fn layer ->
+          ctx = Contexir.Context.get_ctx()
+          apply(layer, fun, [module, :after | args] ++ [ctx])
+        end
+        result
+      {around, b, c} ->
+        [current | rest] = around
+        Process.put(:active_layers, {rest, b, c})
+        ctx = Contexir.Context.get_ctx()
+        apply(current, fun, [module, :around | args] ++ ctx)
+    end
   end
 end

@@ -18,21 +18,15 @@ defmodule ContexirTest do
 
   deflayer GiveHundred do
     defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
-      IO.inspect("a around")
       %{balance: b} = acc
-      result = continue(Account, :withdraw, [%{balance: b + 100}, amt, ctx])
-      IO.inspect("a around end")
-      result
+      continue(ContexirTest.Account, :withdraw, [%{balance: b + 100}, amt])
     end
   end
 
   deflayer TakeTenPercent do
     defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
-      IO.inspect("b around")
       %{balance: b} = acc
-      result = continue(Account, :withdraw, [%{balance: (b * 0.9)}, amt, ctx])
-      IO.inspect("b around end")
-      result
+      continue(ContexirTest.Account, :withdraw, [%{balance: (b * 0.9)}, amt])
     end
   end
 
@@ -51,13 +45,14 @@ defmodule ContexirTest do
     layers = [ContexirTest.GiveHundred]
     %{balance: b} = Contexir.with_layers layers,
       ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
-    assert b == 200
+    assert b == 160
   end
 
+  # @tag :skip
   test "run 2 layers" do
     layers = [ContexirTest.GiveHundred, ContexirTest.TakeTenPercent]
     %{balance: b} = Contexir.with_layers layers,
       ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
-    assert b == 180
+    assert b == 140
   end
 end
