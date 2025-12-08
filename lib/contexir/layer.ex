@@ -1,4 +1,4 @@
-defmodule Contexir.Macros do
+defmodule Contexir.Layer do
   @moduledoc """
   DSL:
   - `deflayer Name, opts`
@@ -30,7 +30,7 @@ defmodule Contexir.Macros do
 
     quote do
       defmodule unquote(name) do
-        import Contexir.Macros
+        import Contexir.Layer
 
         def __predicate__(unquote_splicing(args)) do
           unquote(body)

@@ -1,6 +1,6 @@
 defmodule ContexirUseLayersTest do
   use ExUnit.Case, async: false
-  import Contexir.Macros
+  import Contexir.Layer
   require Contexir
 
   defmodule Target do
