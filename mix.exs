@@ -23,8 +23,7 @@ defmodule Contexir.MixProject do
   defp package() do
     [
       name: "contexir",
-      files: ~w(lib .formatter.exs mix.exs README* readme* LICENSE*
-        license*),
+      files: ~w(lib .formatter.exs mix.exs readme* license*),
       licenses: ["Unlicense"],
       links: %{"GitHub" => "https://github.com/diasbruno/contexir"}
     ]
