@@ -1,7 +1,6 @@
 # test/contexir_test.exs
 defmodule ContexirTest do
   use ExUnit.Case, async: false
-  import ExUnit.CaptureIO
   import Contexir.Macros
   require Contexir
 
