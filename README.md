@@ -1,6 +1,6 @@
 # Contexir
 
-![contexir](https://raw.githubusercontent.com/diasbruno/contexir/refs/heads/development/assets/contexir.png "contexir")
+![contexir](https://raw.githubusercontent.com/diasbruno/contexir/refs/heads/development/assets/github-banner.png "contexir")
 
 > 🧠 Context-Oriented Programming for Elixir — composable layers for dynamic, context-aware behavior.
 
