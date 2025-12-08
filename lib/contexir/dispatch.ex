@@ -42,6 +42,18 @@ defmodule Contexir.Dispatch do
   (defmethod compute :after ((x extend-example))
   (format t "b After~%"))
 
+
+  # Result:
+  
+  b Around (most specific)
+  a Around (most specific)
+  b Before
+  a Before
+  b Primary
+  a After
+  b After
+  a Around (end)
+  b Around (end)
   """
 
   defp extract_ctx(args) do
@@ -51,20 +63,16 @@ defmodule Contexir.Dispatch do
     end
   end
 
-  @doc """
-  Check whether a layer is inactive.
-  """
+  # Check whether a layer is inactive.
   defp predicate_active?(layer, module, fun, args, ctx) do
     layer.__predicate__(module, fun, args, ctx)
   end
 
-  @doc """
-  Returns a tuple-4 with:
-  - Layers with aroundg
-  - with before
-  - the primary module
-  - with after
-  """
+  # Returns a tuple-4 with:
+  # - Layers with aroundg
+  # - with before
+  # - the primary module
+  # - with after
   defp build_plan(layers, module, fun) do
     {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
       aa = if layer.has_mode_defined(module, fun, :around), do: [layer | a], else: a
@@ -91,21 +99,9 @@ defmodule Contexir.Dispatch do
     continue(module, fun, args)
   end
 
-  """
-  b Around (most specific)
-  a Around (most specific)
-  b Before
-  a Before
-  b Primary
-  a After
-  b After
-  a Around (end)
-  b Around (end)
-  """
-
   def continue(module, fun, args) do
     case Process.get(:active_layers) do
-      {[], b, c} ->
+      {[], b, _c} ->
         Enum.each b, fn layer ->
           ctx = Contexir.Context.get_ctx()
           apply(layer, fun, [module, :before | args] ++ [ctx])
