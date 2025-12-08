@@ -68,10 +68,9 @@ defmodule Contexir.Dispatch do
     layer.__predicate__(module, fun, args, ctx)
   end
 
-  # Returns a tuple-4 with:
+  # Returns a tuple-3 with:
   # - Layers with aroundg
   # - with before
-  # - the primary module
   # - with after
   defp build_plan(layers, module, fun) do
     {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
