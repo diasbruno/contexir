@@ -45,7 +45,7 @@ mix deps.get
 
 ```elixir
 defmodule Account do
-  use Contexir.Base
+  use Contexir
 
   def withdraw(acc, amt, _ctx) do
     IO.puts("primary")

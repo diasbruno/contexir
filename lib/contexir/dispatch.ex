@@ -44,7 +44,7 @@ defmodule Contexir.Dispatch do
 
 
   # Result:
-  
+
   b Around (most specific)
   a Around (most specific)
   b Before

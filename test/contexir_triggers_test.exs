@@ -4,7 +4,7 @@ defmodule ContexirTriggersTest do
   require Contexir
 
   defmodule Target do
-    use Contexir.Base
+    use Contexir
 
     def execute(acc, ctx) do
       %{acc | string: acc.string <> " target_part"}

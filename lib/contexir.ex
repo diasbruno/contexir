@@ -79,12 +79,14 @@ defmodule Contexir do
   Example for `[A, B]` active layers:
 
       A:around
-      A:before
       B:around
+      A:before
       B:before
       primary
       B:after
       A:after
+      A:around end
+      B:around end
   """
 
   defp extract_call_info(target) do
@@ -121,6 +123,31 @@ defmodule Contexir do
         unquote(Module.concat(mod)),
         unquote(fun),
         unquote(args))
+    end
+  end
+
+  @doc """
+  Marks a module as a *context-aware base module*.
+
+  When you `use Contexir`, the module becomes compatible with the Contexir
+  dispatch system — allowing its functions to be refined dynamically.
+
+  The macro injects the necessary setup so that calls to the module’s
+  functions are automatically routed through the Contexir dispatcher.
+
+  ## Example
+
+      defmodule Account do
+        use Contexir
+
+        def withdraw(acc, amt, _ctx) do
+          %{acc | balance: acc.balance - amt}
+        end
+      end
+  """
+  defmacro __using__(_opts) do
+    quote do
+      import Contexir.Dispatch
     end
   end
 end

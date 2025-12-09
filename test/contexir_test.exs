@@ -8,7 +8,7 @@ defmodule ContexirTest do
   # Setup base module and layers
   #
   defmodule Account do
-    use Contexir.Base
+    use Contexir
 
     def withdraw(acc, amt, ctx) do
       %{acc | balance: acc.balance - amt}
