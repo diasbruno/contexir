@@ -45,7 +45,7 @@ defmodule Contexir.Dispatch do
   # - with before
   # - with after
   defp build_plan(layers, module, fun) do
-    {a, b, c} = Enum.reduce(layexrs, {[], [], []}, fn layer, {a, b, c} ->
+    {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
       aa = if layer.has_mode_defined(module, fun, :around), do: [layer | a], else: a
       bb = if layer.has_mode_defined(module, fun, :before), do: [layer | b], else: b
       cc = if layer.has_mode_defined(module, fun, :after), do: [layer | c], else: c
