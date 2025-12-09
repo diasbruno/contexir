@@ -1,59 +1,31 @@
 defmodule Contexir.Dispatch do
   @moduledoc """
-  Dispatches function calls through active layers, handling:
-  - Context propagation
-  - Layer predicates
-  - Execution modes (:before, :around, :after)
+  Internal module responsible for executing layered function calls.
 
+  `Contexir.Dispatch` builds and executes an **execution plan** composed of
+  three ordered lists — the *arounds*, *befores*, and *afters* — that define
+  how each active layer participates in a function call.
 
-  (defclass example () ())
-  (defmethod compute ((x example))
-  (format t "a Around (most specific)~%")
-  (call-next-method)
-  (format t "a Around (end)~%"))
+  ## Execution Order
 
-  (defmethod compute :around ((x example))
-  (format t "a Around (most specific)~%")
-  (call-next-method)
-  (format t "a Around (end)~%"))
+  The dispatcher enforces this consistent call sequence for all active layers [A, B]:
 
-  (defmethod compute :before ((x example))
-  (format t "a Before~%"))
+      A:around
+      B:around
+      A:before
+      B:before
+      primary
+      B:after
+      A:after
+      A:around end
+      B:around end
 
-  (defmethod compute ((x example))
-  (format t "a Primary~%"))
+  Where each layer’s `:around` must explicitly call `continue/3` to proceed to
+  the next layer or the base function. If a layer omits that call, execution
+  stops there — the layer effectively captures the call.
 
-  (defmethod compute :after ((x example))
-  (format t "a After~%"))
-
-  (defclass extend-example (example) ())
-
-  (defmethod compute :around ((x extend-example))
-  (format t "b Around (most specific)~%")
-  (call-next-method)
-  (format t "b Around (end)~%"))
-
-  (defmethod compute :before ((x extend-example))
-  (format t "b Before~%"))
-
-  (defmethod compute ((x extend-example))
-  (format t "b Primary~%"))
-
-  (defmethod compute :after ((x extend-example))
-  (format t "b After~%"))
-
-
-  # Result:
-
-  b Around (most specific)
-  a Around (most specific)
-  b Before
-  a Before
-  b Primary
-  a After
-  b After
-  a Around (end)
-  b Around (end)
+  `Contexir.Dispatch` maintains no global state. All layer and context data
+  are stored process-locally to ensure concurrency safety.
   """
 
   defp extract_ctx(args) do
@@ -69,11 +41,11 @@ defmodule Contexir.Dispatch do
   end
 
   # Returns a tuple-3 with:
-  # - Layers with aroundg
+  # - Layers with around
   # - with before
   # - with after
   defp build_plan(layers, module, fun) do
-    {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
+    {a, b, c} = Enum.reduce(layexrs, {[], [], []}, fn layer, {a, b, c} ->
       aa = if layer.has_mode_defined(module, fun, :around), do: [layer | a], else: a
       bb = if layer.has_mode_defined(module, fun, :before), do: [layer | b], else: b
       cc = if layer.has_mode_defined(module, fun, :after), do: [layer | c], else: c
@@ -83,6 +55,21 @@ defmodule Contexir.Dispatch do
     {Enum.reverse(a), Enum.reverse(b), c}
   end
 
+  @doc """
+  Dispatches a function call through all currently active layers.
+
+  This is the **entry point** used internally by Contexir when a function
+  defined with `use Contexir` is invoked. It builds an execution plan from
+  the currently active layers and executes it according to Contexir’s
+  layer order model (`:around`, `:before`, `:after`).
+
+  The `module` and `fun` identify the base function being called,
+  and `args` represents the argument list (including the optional context map).
+
+  ## Example (internal)
+
+      Contexir.Dispatch.call(Account, :withdraw, [%{balance: 100}, 10, %{}])
+  """
   def call(module, fun, args) do
     {args, ctx} = extract_ctx(args)
     Contexir.Context.set_ctx(ctx)
@@ -98,6 +85,32 @@ defmodule Contexir.Dispatch do
     continue(module, fun, args)
   end
 
+  @doc """
+  Advances the current execution to the next layer or to the primary function.
+
+  `continue/3` must be called **inside an `:around` partial** to delegate
+  control to the next layer in the chain. If there are no more `:around`
+  layers left, it executes all `:before` and `:after` phases and finally
+  calls the primary function.
+
+  The `module` and `fun` refer to the base function being refined,
+  and `args` is the list of arguments to forward.
+
+  ## Example
+
+      defpartial Account.withdraw(acc, amt, ctx), mode: :around do
+        IO.puts("Start")
+        result = continue(Account, :withdraw, [acc, amt, ctx])
+        IO.puts("End")
+        result
+      end
+
+  If an `:around` partial does **not** call `continue/3`, execution
+  halts at that layer and returns.
+
+  This function is used within Contexir’s layer DSL and
+  should only be called from inside `defpartial …, mode: :around` blocks.
+  """
   def continue(module, fun, args) do
     case Process.get(:active_layers) do
       {[], b, _c} ->
