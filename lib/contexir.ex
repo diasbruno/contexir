@@ -127,6 +127,27 @@ defmodule Contexir do
   end
 
   @doc """
+  Resolves layers from a declarative context module and executes a call with
+  those layers active.
+  """
+  defmacro with_context(context_module, ctx, target) do
+    {mod, fun, args} = extract_call_info(target)
+
+    quote do
+      ctx = unquote(ctx)
+      layers = Contexir.Layer.resolve_context!(unquote(context_module), ctx)
+      args = List.replace_at(unquote(args), -1, ctx)
+
+      Contexir.Context.with_layers(
+        layers,
+        unquote(Module.concat(mod)),
+        unquote(fun),
+        args
+      )
+    end
+  end
+
+  @doc """
   Marks a module as a *context-aware base module*.
 
   When you `use Contexir`, the module becomes compatible with the Contexir

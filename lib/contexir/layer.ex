@@ -90,6 +90,45 @@ defmodule Contexir.Layer do
   end
 
   @doc """
+  Resolves declarative context rules against a context map.
+  """
+  def resolve_context(context_module, ctx) do
+    context_module.__contexir_context_layers__(ctx)
+    |> resolve()
+  end
+
+  @doc """
+  Resolves declarative context rules or raises when relationships are invalid.
+  """
+  def resolve_context!(context_module, ctx) do
+    context_module.__contexir_context_layers__(ctx)
+    |> resolve!()
+  end
+
+  @doc """
+  Declares a context module that can activate layers from context values.
+  """
+  defmacro defcontext(name, do: block) do
+    quote do
+      defmodule unquote(name) do
+        import Contexir.Layer, only: [layer: 2]
+
+        Module.register_attribute(__MODULE__, :contexir_context_layers, accumulate: true)
+
+        unquote(block)
+
+        def __contexir_context_layers__(ctx) do
+          @contexir_context_layers
+          |> Enum.reverse()
+          |> Enum.flat_map(&__contexir_context_layer__(ctx, &1))
+        end
+
+        def __contexir_context_layer__(_ctx, _layer), do: []
+      end
+    end
+  end
+
+  @doc """
   Declares a new **layer module**.
 
   The `deflayer` macro defines a standard Elixir module configured as a Contexir
@@ -257,6 +296,21 @@ defmodule Contexir.Layer do
   defmacro after_layer(layer) do
     quote do
       @contexir_after unquote(layer)
+    end
+  end
+
+  @doc """
+  Declares a context-activated layer inside `defcontext`.
+  """
+  defmacro layer(layer, opts) do
+    predicate = Keyword.fetch!(opts, :when)
+
+    quote do
+      @contexir_context_layers unquote(layer)
+
+      def __contexir_context_layer__(ctx, unquote(layer)) do
+        if unquote(predicate).(ctx), do: [unquote(layer)], else: []
+      end
     end
   end
 

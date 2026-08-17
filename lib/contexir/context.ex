@@ -41,4 +41,44 @@ defmodule Contexir.Context do
   def update_ctx(fun) when is_function(fun, 1) do
     set_ctx(fun.(get_ctx()))
   end
+
+  @doc """
+  Returns the current process-local context.
+  """
+  def current, do: get_ctx()
+
+  @doc """
+  Returns a value from the current context.
+  """
+  def get(key, default \\ nil) do
+    Map.get(get_ctx(), key, default)
+  end
+
+  @doc """
+  Sets a value in the current context.
+  """
+  def put(key, value) do
+    update_ctx(&Map.put(&1, key, value))
+  end
+
+  @doc """
+  Updates a value in the current context.
+  """
+  def update(key, initial, fun) when is_function(fun, 1) do
+    update_ctx(&Map.update(&1, key, initial, fun))
+  end
+
+  @doc """
+  Runs a function with a temporary process-local context.
+  """
+  def with_context(ctx, fun) when is_function(fun, 0) do
+    old = get_ctx()
+    set_ctx(ctx)
+
+    try do
+      fun.()
+    after
+      set_ctx(old)
+    end
+  end
 end
