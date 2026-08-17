@@ -59,6 +59,37 @@ defmodule Contexir.Layer do
   end
 
   @doc """
+  Resolves layer composition metadata without activating the layers.
+
+  Resolution expands `use_layers`, removes duplicate layers while preserving the
+  first occurrence, and validates `requires` and `conflicts_with` relationships.
+  """
+  def resolve(layers) do
+    resolved =
+      layers
+      |> Enum.flat_map(&expand_layer/1)
+      |> uniq()
+
+    with :ok <- validate_requires(resolved),
+         :ok <- validate_conflicts(resolved) do
+      {:ok, resolved}
+    end
+  end
+
+  @doc """
+  Resolves layer composition metadata or raises when relationships are invalid.
+  """
+  def resolve!(layers) do
+    case resolve(layers) do
+      {:ok, resolved} ->
+        resolved
+
+      {:error, reason} ->
+        raise ArgumentError, "invalid layer composition: #{inspect(reason)}"
+    end
+  end
+
+  @doc """
   Declares a new **layer module**.
 
   The `deflayer` macro defines a standard Elixir module configured as a Contexir
@@ -91,6 +122,10 @@ defmodule Contexir.Layer do
 
         @contexir_predicate? unquote(predicate != @const_predicate_function_true)
         Module.register_attribute(__MODULE__, :contexir_partials, accumulate: true)
+        Module.register_attribute(__MODULE__, :contexir_requires, accumulate: true)
+        Module.register_attribute(__MODULE__, :contexir_conflicts_with, accumulate: true)
+        Module.register_attribute(__MODULE__, :contexir_before, accumulate: true)
+        Module.register_attribute(__MODULE__, :contexir_after, accumulate: true)
         Module.register_attribute(__MODULE__, :included_layers, accumulate: false)
 
         def __predicate__(unquote_splicing(args)) do
@@ -104,6 +139,10 @@ defmodule Contexir.Layer do
             module: __MODULE__,
             partials: Enum.reverse(@contexir_partials),
             includes: @included_layers || [],
+            requires: Enum.reverse(@contexir_requires),
+            conflicts_with: Enum.reverse(@contexir_conflicts_with),
+            before: Enum.reverse(@contexir_before),
+            after: Enum.reverse(@contexir_after),
             predicate?: @contexir_predicate?
           }
         end
@@ -182,6 +221,92 @@ defmodule Contexir.Layer do
     quote do
       Module.put_attribute(__MODULE__, :included_layers, unquote(layers))
       def __included_layers__, do: @included_layers
+    end
+  end
+
+  @doc """
+  Declares that the current layer requires another layer to be active.
+  """
+  defmacro requires(layer) do
+    quote do
+      @contexir_requires unquote(layer)
+    end
+  end
+
+  @doc """
+  Declares that the current layer cannot be active with another layer.
+  """
+  defmacro conflicts_with(layer) do
+    quote do
+      @contexir_conflicts_with unquote(layer)
+    end
+  end
+
+  @doc """
+  Declares that the current layer should run before another layer.
+  """
+  defmacro before(layer) do
+    quote do
+      @contexir_before unquote(layer)
+    end
+  end
+
+  @doc """
+  Declares that the current layer should run after another layer.
+  """
+  defmacro after_layer(layer) do
+    quote do
+      @contexir_after unquote(layer)
+    end
+  end
+
+  defp expand_layer(layer) do
+    case info(layer).includes do
+      [] -> [layer]
+      layers -> Enum.flat_map(layers, &expand_layer/1)
+    end
+  end
+
+  defp uniq(layers) do
+    layers
+    |> Enum.reduce({[], MapSet.new()}, fn layer, {layers, seen} ->
+      if MapSet.member?(seen, layer) do
+        {layers, seen}
+      else
+        {[layer | layers], MapSet.put(seen, layer)}
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp validate_requires(layers) do
+    layer_set = MapSet.new(layers)
+
+    layers
+    |> Enum.flat_map(fn layer ->
+      info(layer).requires
+      |> Enum.reject(&MapSet.member?(layer_set, &1))
+      |> Enum.map(&%{layer: layer, requires: &1})
+    end)
+    |> case do
+      [] -> :ok
+      missing -> {:error, {:missing_requirements, missing}}
+    end
+  end
+
+  defp validate_conflicts(layers) do
+    layer_set = MapSet.new(layers)
+
+    layers
+    |> Enum.flat_map(fn layer ->
+      info(layer).conflicts_with
+      |> Enum.filter(&MapSet.member?(layer_set, &1))
+      |> Enum.map(&%{layer: layer, conflicts_with: &1})
+    end)
+    |> case do
+      [] -> :ok
+      conflicts -> {:error, {:conflicting_layers, conflicts}}
     end
   end
 end

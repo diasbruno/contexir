@@ -206,6 +206,21 @@ defmodule ContexirTriggersTest do
     use_layers([ContexirTriggersTest.Outer, ContexirTriggersTest.Inner])
   end
 
+  deflayer RelationshipLayer do
+    requires(ContexirTriggersTest.ParentDispatch)
+    conflicts_with(ContexirTriggersTest.FailingChildDispatch)
+    before(ContexirTriggersTest.Inner)
+    after_layer(ContexirTriggersTest.Outer)
+  end
+
+  deflayer RequiresParent do
+    requires(ContexirTriggersTest.ParentDispatch)
+  end
+
+  deflayer ConflictsWithChild do
+    conflicts_with(ContexirTriggersTest.ChildDispatch)
+  end
+
   #
   # Tests
   #
@@ -299,6 +314,10 @@ defmodule ContexirTriggersTest do
                %{module: ContexirTriggersTest.Target, function: :ordered, mode: :after}
              ],
              includes: [],
+             requires: [],
+             conflicts_with: [],
+             before: [],
+             after: [],
              predicate?: false
            }
 
@@ -308,5 +327,70 @@ defmodule ContexirTriggersTest do
              ContexirTriggersTest.Outer,
              ContexirTriggersTest.Inner
            ]
+  end
+
+  test "layer metadata describes composition relationships" do
+    info = Contexir.Layer.info(ContexirTriggersTest.RelationshipLayer)
+
+    assert info.requires == [ContexirTriggersTest.ParentDispatch]
+    assert info.conflicts_with == [ContexirTriggersTest.FailingChildDispatch]
+    assert info.before == [ContexirTriggersTest.Inner]
+    assert info.after == [ContexirTriggersTest.Outer]
+  end
+
+  test "resolves grouped layers and removes duplicates" do
+    assert Contexir.Layer.resolve([
+             ContexirTriggersTest.GroupLayer,
+             ContexirTriggersTest.Outer
+           ]) ==
+             {:ok, [ContexirTriggersTest.Outer, ContexirTriggersTest.Inner]}
+  end
+
+  test "validates required layers during resolution" do
+    assert Contexir.Layer.resolve([ContexirTriggersTest.RequiresParent]) ==
+             {:error,
+              {:missing_requirements,
+               [
+                 %{
+                   layer: ContexirTriggersTest.RequiresParent,
+                   requires: ContexirTriggersTest.ParentDispatch
+                 }
+               ]}}
+
+    assert Contexir.Layer.resolve([
+             ContexirTriggersTest.ParentDispatch,
+             ContexirTriggersTest.RequiresParent
+           ]) ==
+             {:ok, [ContexirTriggersTest.ParentDispatch, ContexirTriggersTest.RequiresParent]}
+  end
+
+  test "validates conflicting layers during resolution" do
+    assert Contexir.Layer.resolve([
+             ContexirTriggersTest.ConflictsWithChild,
+             ContexirTriggersTest.ChildDispatch
+           ]) ==
+             {:error,
+              {:conflicting_layers,
+               [
+                 %{
+                   layer: ContexirTriggersTest.ConflictsWithChild,
+                   conflicts_with: ContexirTriggersTest.ChildDispatch
+                 }
+               ]}}
+  end
+
+  test "resolve! raises when relationships are invalid" do
+    assert_raise ArgumentError, ~r/invalid layer composition/, fn ->
+      Contexir.Layer.resolve!([ContexirTriggersTest.RequiresParent])
+    end
+  end
+
+  test "with_layers validates composition before activation" do
+    assert_raise ArgumentError, ~r/invalid layer composition/, fn ->
+      Contexir.with_layers(
+        [ContexirTriggersTest.RequiresParent],
+        ContexirTriggersTest.Target.execute(%{string: "start"}, %{})
+      )
+    end
   end
 end

@@ -8,7 +8,7 @@ defmodule Contexir.Context do
   """
   def with_layers(layers, mod, fun, args) do
     old = Process.get(:active_layers, [])
-    expanded = Enum.flat_map(layers, &expand_layer/1)
+    expanded = Contexir.Layer.resolve!(layers)
     Process.put(:active_layers, expanded ++ old)
 
     try do
@@ -20,7 +20,7 @@ defmodule Contexir.Context do
 
   # Activate a layer (recursively expands grouped layers)
   def activate(layer) do
-    expanded = expand_layer(layer)
+    expanded = Contexir.Layer.resolve!([layer])
     layers = Process.get(:active_layers, [])
     Process.put(:active_layers, expanded ++ layers)
   end
@@ -40,14 +40,5 @@ defmodule Contexir.Context do
 
   def update_ctx(fun) when is_function(fun, 1) do
     set_ctx(fun.(get_ctx()))
-  end
-
-  # Expand grouped layers recursively
-  defp expand_layer(layer) do
-    if function_exported?(layer, :__included_layers__, 0) do
-      Enum.flat_map(layer.__included_layers__(), &expand_layer/1)
-    else
-      [layer]
-    end
   end
 end
