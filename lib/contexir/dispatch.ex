@@ -32,8 +32,12 @@ defmodule Contexir.Dispatch do
 
   defp extract_ctx(args) do
     case args do
-      [] -> {[], nil}
-      _ -> Enum.split(args, length(args) - 1)
+      [] ->
+        {[], nil}
+
+      _ ->
+        {args, [ctx]} = Enum.split(args, length(args) - 1)
+        {args, ctx}
     end
   end
 
@@ -81,6 +85,7 @@ defmodule Contexir.Dispatch do
   """
   def call(module, fun, args) do
     {args, ctx} = extract_ctx(args)
+    old_ctx = Contexir.Context.get_ctx()
     Contexir.Context.set_ctx(ctx)
 
     layers =
@@ -95,6 +100,7 @@ defmodule Contexir.Dispatch do
     try do
       continue(module, fun, args)
     after
+      Contexir.Context.set_ctx(old_ctx)
       Process.put(@execution_key, old_execution_plan)
     end
   end

@@ -22,6 +22,26 @@ defmodule ContexirTriggersTest do
     def active_layers(_acc, _ctx) do
       Contexir.Context.active_layers()
     end
+
+    def parent(acc, _ctx) do
+      log("parent primary #{Contexir.Context.get_ctx().request_id}")
+      acc
+    end
+
+    def child(acc, _ctx) do
+      log("child primary #{Contexir.Context.get_ctx().request_id}")
+      acc
+    end
+
+    def parent_after_exception(acc, _ctx) do
+      log("parent exception primary #{Contexir.Context.get_ctx().request_id}")
+      acc
+    end
+
+    def failing_child(_acc, _ctx) do
+      log("failing child primary #{Contexir.Context.get_ctx().request_id}")
+      raise "nested failure"
+    end
   end
 
   deflayer BeforeAfter do
@@ -103,6 +123,79 @@ defmodule ContexirTriggersTest do
     end
   end
 
+  deflayer ParentDispatch do
+    defpartial ContexirTriggersTest.Target.parent(acc, ctx), mode: :around do
+      ContexirTriggersTest.Target.log("parent around #{Contexir.Context.get_ctx().request_id}")
+
+      Contexir.with_layers(
+        [],
+        ContexirTriggersTest.Target.child(acc, %{request_id: :child})
+      )
+
+      ContexirTriggersTest.Target.log(
+        "parent after nested #{Contexir.Context.get_ctx().request_id}"
+      )
+
+      continue(
+        ContexirTriggersTest.Target,
+        :parent,
+        [acc]
+      )
+    end
+  end
+
+  deflayer ChildDispatch do
+    defpartial ContexirTriggersTest.Target.child(acc, ctx), mode: :around do
+      ContexirTriggersTest.Target.log("child around #{Contexir.Context.get_ctx().request_id}")
+
+      continue(
+        ContexirTriggersTest.Target,
+        :child,
+        [acc]
+      )
+    end
+  end
+
+  deflayer ParentRescuesDispatch do
+    defpartial ContexirTriggersTest.Target.parent_after_exception(acc, ctx), mode: :around do
+      ContexirTriggersTest.Target.log(
+        "parent exception around #{Contexir.Context.get_ctx().request_id}"
+      )
+
+      try do
+        Contexir.with_layers(
+          [],
+          ContexirTriggersTest.Target.failing_child(acc, %{request_id: :child})
+        )
+      rescue
+        RuntimeError ->
+          ContexirTriggersTest.Target.log(
+            "parent rescued #{Contexir.Context.get_ctx().request_id}"
+          )
+      end
+
+      continue(
+        ContexirTriggersTest.Target,
+        :parent_after_exception,
+        [acc]
+      )
+    end
+  end
+
+  deflayer FailingChildDispatch do
+    defpartial ContexirTriggersTest.Target.failing_child(acc, ctx), mode: :around do
+      ContexirTriggersTest.Target.log(
+        "failing child around #{Contexir.Context.get_ctx().request_id}"
+      )
+
+      continue(
+        ContexirTriggersTest.Target,
+        :failing_child,
+        [acc]
+      )
+    end
+  end
+
   #
   # Tests
   #
@@ -151,5 +244,39 @@ defmodule ContexirTriggersTest do
              layers,
              ContexirTriggersTest.Target.active_layers(%{}, %{})
            ) == layers
+  end
+
+  test "nested dispatch gets its own execution state and restores parent context" do
+    Process.delete(:contexir_order)
+
+    Contexir.with_layers(
+      [ContexirTriggersTest.ParentDispatch, ContexirTriggersTest.ChildDispatch],
+      ContexirTriggersTest.Target.parent(%{}, %{request_id: :parent})
+    )
+
+    assert Process.get(:contexir_order) == [
+             "parent around parent",
+             "child around child",
+             "child primary child",
+             "parent after nested parent",
+             "parent primary parent"
+           ]
+  end
+
+  test "nested dispatch restores parent execution state after exception" do
+    Process.delete(:contexir_order)
+
+    Contexir.with_layers(
+      [ContexirTriggersTest.ParentRescuesDispatch, ContexirTriggersTest.FailingChildDispatch],
+      ContexirTriggersTest.Target.parent_after_exception(%{}, %{request_id: :parent})
+    )
+
+    assert Process.get(:contexir_order) == [
+             "parent exception around parent",
+             "failing child around child",
+             "failing child primary child",
+             "parent rescued parent",
+             "parent exception primary parent"
+           ]
   end
 end
