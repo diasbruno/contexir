@@ -196,6 +196,16 @@ defmodule ContexirTriggersTest do
     end
   end
 
+  deflayer PredicateLayer, when: fn _mod, _fun, _args, ctx -> ctx[:enabled] end do
+    defpartial ContexirTriggersTest.Target.execute(acc, _ctx), mode: :before do
+      acc
+    end
+  end
+
+  deflayer GroupLayer do
+    use_layers([ContexirTriggersTest.Outer, ContexirTriggersTest.Inner])
+  end
+
   #
   # Tests
   #
@@ -277,6 +287,26 @@ defmodule ContexirTriggersTest do
              "failing child primary child",
              "parent rescued parent",
              "parent exception primary parent"
+           ]
+  end
+
+  test "layer metadata describes partials predicate and included layers" do
+    assert Contexir.Layer.info(ContexirTriggersTest.Outer) == %{
+             module: ContexirTriggersTest.Outer,
+             partials: [
+               %{module: ContexirTriggersTest.Target, function: :ordered, mode: :around},
+               %{module: ContexirTriggersTest.Target, function: :ordered, mode: :before},
+               %{module: ContexirTriggersTest.Target, function: :ordered, mode: :after}
+             ],
+             includes: [],
+             predicate?: false
+           }
+
+    assert Contexir.Layer.info(ContexirTriggersTest.PredicateLayer).predicate? == true
+
+    assert Contexir.Layer.info(ContexirTriggersTest.GroupLayer).includes == [
+             ContexirTriggersTest.Outer,
+             ContexirTriggersTest.Inner
            ]
   end
 end

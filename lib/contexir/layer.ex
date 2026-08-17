@@ -52,6 +52,13 @@ defmodule Contexir.Layer do
                                   ]}
 
   @doc """
+  Returns compile-time metadata for a layer module.
+  """
+  def info(layer) do
+    layer.__contexir_layer_info__()
+  end
+
+  @doc """
   Declares a new **layer module**.
 
   The `deflayer` macro defines a standard Elixir module configured as a Contexir
@@ -82,11 +89,24 @@ defmodule Contexir.Layer do
       defmodule unquote(name) do
         import Contexir.Layer
 
+        @contexir_predicate? unquote(predicate != @const_predicate_function_true)
+        Module.register_attribute(__MODULE__, :contexir_partials, accumulate: true)
+        Module.register_attribute(__MODULE__, :included_layers, accumulate: false)
+
         def __predicate__(unquote_splicing(args)) do
           unquote(body)
         end
 
         unquote(block)
+
+        def __contexir_layer_info__ do
+          %{
+            module: __MODULE__,
+            partials: Enum.reverse(@contexir_partials),
+            includes: @included_layers || [],
+            predicate?: @contexir_predicate?
+          }
+        end
 
         @doc """
         Default case.
@@ -124,6 +144,12 @@ defmodule Contexir.Layer do
     mode = Keyword.get(opts, :mode, :around)
 
     quote do
+      @contexir_partials %{
+        module: unquote(the_module),
+        function: unquote(fun),
+        mode: unquote(mode)
+      }
+
       def unquote(fun)(unquote(the_module), unquote(mode), unquote_splicing(args)) do
         import Contexir.Dispatch, only: [continue: 3]
         unquote(body)
