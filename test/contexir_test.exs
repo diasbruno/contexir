@@ -10,20 +10,20 @@ defmodule ContexirTest do
   defmodule Account do
     use Contexir
 
-    def withdraw(acc, amt, ctx) do
+    def withdraw(acc, amt, _ctx) do
       %{acc | balance: acc.balance - amt}
     end
   end
 
   deflayer GiveHundred do
-    defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
+    defpartial ContexirTest.Account.withdraw(acc, amt, _ctx) do
       %{balance: b} = acc
       continue(ContexirTest.Account, :withdraw, [%{balance: b + 100}, amt])
     end
   end
 
   deflayer TakeTenPercent do
-    defpartial ContexirTest.Account.withdraw(acc, amt, ctx) do
+    defpartial ContexirTest.Account.withdraw(acc, amt, _ctx) do
       %{balance: b} = acc
       continue(ContexirTest.Account, :withdraw, [%{balance: b * 0.9}, amt])
     end

@@ -6,11 +6,11 @@ defmodule ContexirTriggersTest do
   defmodule Target do
     use Contexir
 
-    def execute(acc, ctx) do
+    def execute(acc, _ctx) do
       %{acc | string: acc.string <> " target_part"}
     end
 
-    def ordered(acc, ctx) do
+    def ordered(acc, _ctx) do
       log("primary")
       acc
     end
@@ -45,7 +45,7 @@ defmodule ContexirTriggersTest do
   end
 
   deflayer BeforeAfter do
-    defpartial ContexirTriggersTest.Target.execute(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.execute(acc, _ctx), mode: :around do
       %{string: s} = acc
 
       continue(
@@ -55,18 +55,18 @@ defmodule ContexirTriggersTest do
       )
     end
 
-    defpartial ContexirTriggersTest.Target.execute(acc, ctx), mode: :before do
+    defpartial ContexirTriggersTest.Target.execute(_acc, _ctx), mode: :before do
       Process.put(:target, 1)
     end
 
-    defpartial ContexirTriggersTest.Target.execute(acc, ctx), mode: :after do
+    defpartial ContexirTriggersTest.Target.execute(_acc, _ctx), mode: :after do
       x = Process.get(:target) || 0
       Process.put(:target, x - 1)
     end
   end
 
   deflayer Outer do
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.ordered(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log("A around")
 
       result =
@@ -80,17 +80,17 @@ defmodule ContexirTriggersTest do
       result
     end
 
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :before do
+    defpartial ContexirTriggersTest.Target.ordered(_acc, _ctx), mode: :before do
       ContexirTriggersTest.Target.log("A before")
     end
 
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :after do
+    defpartial ContexirTriggersTest.Target.ordered(_acc, _ctx), mode: :after do
       ContexirTriggersTest.Target.log("A after")
     end
   end
 
   deflayer Inner do
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.ordered(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log("B around")
 
       result =
@@ -104,17 +104,17 @@ defmodule ContexirTriggersTest do
       result
     end
 
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :before do
+    defpartial ContexirTriggersTest.Target.ordered(_acc, _ctx), mode: :before do
       ContexirTriggersTest.Target.log("B before")
     end
 
-    defpartial ContexirTriggersTest.Target.ordered(acc, ctx), mode: :after do
+    defpartial ContexirTriggersTest.Target.ordered(_acc, _ctx), mode: :after do
       ContexirTriggersTest.Target.log("B after")
     end
   end
 
   deflayer ActivationProbe do
-    defpartial ContexirTriggersTest.Target.active_layers(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.active_layers(acc, _ctx), mode: :around do
       continue(
         ContexirTriggersTest.Target,
         :active_layers,
@@ -124,7 +124,7 @@ defmodule ContexirTriggersTest do
   end
 
   deflayer ParentDispatch do
-    defpartial ContexirTriggersTest.Target.parent(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.parent(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log("parent around #{Contexir.Context.get_ctx().request_id}")
 
       Contexir.with_layers(
@@ -145,7 +145,7 @@ defmodule ContexirTriggersTest do
   end
 
   deflayer ChildDispatch do
-    defpartial ContexirTriggersTest.Target.child(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.child(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log("child around #{Contexir.Context.get_ctx().request_id}")
 
       continue(
@@ -157,7 +157,7 @@ defmodule ContexirTriggersTest do
   end
 
   deflayer ParentRescuesDispatch do
-    defpartial ContexirTriggersTest.Target.parent_after_exception(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.parent_after_exception(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log(
         "parent exception around #{Contexir.Context.get_ctx().request_id}"
       )
@@ -183,7 +183,7 @@ defmodule ContexirTriggersTest do
   end
 
   deflayer FailingChildDispatch do
-    defpartial ContexirTriggersTest.Target.failing_child(acc, ctx), mode: :around do
+    defpartial ContexirTriggersTest.Target.failing_child(acc, _ctx), mode: :around do
       ContexirTriggersTest.Target.log(
         "failing child around #{Contexir.Context.get_ctx().request_id}"
       )

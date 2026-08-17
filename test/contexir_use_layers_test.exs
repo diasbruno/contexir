@@ -6,13 +6,13 @@ defmodule ContexirUseLayersTest do
   defmodule Target do
     use Contexir
 
-    def execute(acc, ctx) do
+    def execute(acc, _ctx) do
       %{acc | string: acc.string <> " target_part"}
     end
   end
 
   deflayer BeforeAfter do
-    defpartial ContexirUseLayersTest.Target.execute(acc, ctx), mode: :around do
+    defpartial ContexirUseLayersTest.Target.execute(acc, _ctx), mode: :around do
       %{string: s} = acc
 
       result =
@@ -25,11 +25,11 @@ defmodule ContexirUseLayersTest do
       result
     end
 
-    defpartial ContexirUseLayersTest.Target.execute(acc, ctx), mode: :before do
+    defpartial ContexirUseLayersTest.Target.execute(_acc, _ctx), mode: :before do
       Process.put(:target, 1)
     end
 
-    defpartial ContexirUseLayersTest.Target.execute(acc, ctx), mode: :after do
+    defpartial ContexirUseLayersTest.Target.execute(_acc, _ctx), mode: :after do
       x = Process.get(:target) || 0
       Process.put(:target, x - 1)
     end
