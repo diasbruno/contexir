@@ -9,7 +9,7 @@ defmodule Contexir.MixProject do
       elixir: "~> 1.18",
       app: :contexir,
       description: description(),
-      build_embedded: Mix.env == :prod,
+      build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       package: package(),
       deps: deps()

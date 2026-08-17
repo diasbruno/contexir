@@ -78,25 +78,24 @@ defmodule Contexir do
 
   Example for `[A, B]` active layers:
 
-      A:around
-      B:around
-      A:before
-      B:before
-      primary
-      B:after
-      A:after
-      A:around end
-      B:around end
+      A around
+        B around
+          A before
+          B before
+            primary
+          B after
+          A after
+        B around end
+      A around end
   """
 
   defp extract_call_info(target) do
     {{:., _x,
       [
-        {:__aliases__, _y,
-         mod},
+        {:__aliases__, _y, mod},
         fun
-      ]}, _z,
-     args} = target
+      ]}, _z, args} = target
+
     {mod, fun, args}
   end
 
@@ -122,7 +121,8 @@ defmodule Contexir do
         unquote(layers),
         unquote(Module.concat(mod)),
         unquote(fun),
-        unquote(args))
+        unquote(args)
+      )
     end
   end
 

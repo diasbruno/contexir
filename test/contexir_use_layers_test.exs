@@ -14,10 +14,13 @@ defmodule ContexirUseLayersTest do
   deflayer BeforeAfter do
     defpartial ContexirUseLayersTest.Target.execute(acc, ctx), mode: :around do
       %{string: s} = acc
-      result = continue(
-        ContexirUseLayersTest.Target,
-        :execute,
-        [%{string: s <> " around before-after_part"}])
+
+      result =
+        continue(
+          ContexirUseLayersTest.Target,
+          :execute,
+          [%{string: s <> " around before-after_part"}]
+        )
 
       result
     end
@@ -33,7 +36,7 @@ defmodule ContexirUseLayersTest do
   end
 
   deflayer UseLayer do
-    use_layers [ContexirUseLayersTest.BeforeAfter]
+    use_layers([ContexirUseLayersTest.BeforeAfter])
   end
 
   #
@@ -45,8 +48,11 @@ defmodule ContexirUseLayersTest do
     layers = [ContexirUseLayersTest.UseLayer]
 
     %{string: b} =
-      Contexir.with_layers layers,
-      ContexirUseLayersTest.Target.execute(%{string: "start_string"}, %{user: "Alice"})
+      Contexir.with_layers(
+        layers,
+        ContexirUseLayersTest.Target.execute(%{string: "start_string"}, %{user: "Alice"})
+      )
+
     x = Process.get(:target)
     assert x == 0
     assert b == "start_string around before-after_part target_part"

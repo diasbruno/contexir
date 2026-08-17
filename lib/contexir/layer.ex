@@ -40,10 +40,15 @@ defmodule Contexir.Layer do
   @const_predicate_function_true {:fn, [],
                                   [
                                     {:->, [],
-                                    [
-                                      [{:_m, [], nil}, {:_f, [], nil}, {:_a, [], nil}, {:_c, [], nil}],
-                                      true
-                                    ]}
+                                     [
+                                       [
+                                         {:_m, [], nil},
+                                         {:_f, [], nil},
+                                         {:_a, [], nil},
+                                         {:_c, [], nil}
+                                       ],
+                                       true
+                                     ]}
                                   ]}
 
   @doc """
@@ -64,13 +69,13 @@ defmodule Contexir.Layer do
   defmacro deflayer(name, opts \\ [], do: block) do
     predicate = Keyword.get(opts, :when, @const_predicate_function_true)
 
-   {:fn, _x,
+    {:fn, _x,
      [
        {:->, _y,
-       [
-         args,
-         body
-       ]}
+        [
+          args,
+          body
+        ]}
      ]} = predicate
 
     quote do
@@ -90,7 +95,6 @@ defmodule Contexir.Layer do
       end
     end
   end
-
 
   @doc """
   Defines a **partial function** — a refinement of an existing function

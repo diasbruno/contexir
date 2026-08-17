@@ -10,15 +10,15 @@ defmodule Contexir.Dispatch do
 
   The dispatcher enforces this consistent call sequence for all active layers [A, B]:
 
-      A:around
-      B:around
-      A:before
-      B:before
-      primary
-      B:after
-      A:after
-      A:around end
-      B:around end
+      A around
+        B around
+          A before
+          B before
+            primary
+          B after
+          A after
+        B around end
+      A around end
 
   Where each layer’s `:around` must explicitly call `continue/3` to proceed to
   the next layer or the base function. If a layer omits that call, execution
@@ -31,7 +31,7 @@ defmodule Contexir.Dispatch do
   defp extract_ctx(args) do
     case args do
       [] -> {[], nil}
-      _  -> Enum.split(args, length(args) - 1)
+      _ -> Enum.split(args, length(args) - 1)
     end
   end
 
@@ -45,14 +45,21 @@ defmodule Contexir.Dispatch do
   # - with before
   # - with after
   defp build_plan(layers, module, fun) do
-    {a, b, c} = Enum.reduce(layers, {[], [], []}, fn layer, {a, b, c} ->
-      aa = if layer.has_mode_defined(module, fun, :around), do: [layer | a], else: a
-      bb = if layer.has_mode_defined(module, fun, :before), do: [layer | b], else: b
-      cc = if layer.has_mode_defined(module, fun, :after), do: [layer | c], else: c
-      {aa, bb, cc}
-    end)
+    {around, before, after_} =
+      Enum.reduce(layers, {[], [], []}, fn layer, {around, before, after_} ->
+        around =
+          if layer.has_mode_defined(module, fun, :around), do: [layer | around], else: around
 
-    {Enum.reverse(a), Enum.reverse(b), c}
+        before =
+          if layer.has_mode_defined(module, fun, :before), do: [layer | before], else: before
+
+        after_ =
+          if layer.has_mode_defined(module, fun, :after), do: [layer | after_], else: after_
+
+        {around, before, after_}
+      end)
+
+    {Enum.reverse(around), Enum.reverse(before), after_}
   end
 
   @doc """
@@ -113,23 +120,27 @@ defmodule Contexir.Dispatch do
   """
   def continue(module, fun, args) do
     case Process.get(:active_layers) do
-      {[], b, _c} ->
-        Enum.each b, fn layer ->
+      {[], before, after_} ->
+        Enum.each(before, fn layer ->
           ctx = Contexir.Context.get_ctx()
           apply(layer, fun, [module, :before | args] ++ [ctx])
-        end
+        end)
+
         ctx = Contexir.Context.get_ctx()
         result = apply(module, fun, args ++ [ctx])
-        Enum.each b, fn layer ->
+
+        Enum.each(after_, fn layer ->
           ctx = Contexir.Context.get_ctx()
           apply(layer, fun, [module, :after | args] ++ [ctx])
-        end
+        end)
+
         result
-      {around, b, c} ->
+
+      {around, before, after_} ->
         [current | rest] = around
-        Process.put(:active_layers, {rest, b, c})
+        Process.put(:active_layers, {rest, before, after_})
         ctx = Contexir.Context.get_ctx()
-        apply(current, fun, [module, :around | args] ++ ctx)
+        apply(current, fun, [module, :around | args] ++ [ctx])
     end
   end
 end

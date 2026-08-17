@@ -3,7 +3,7 @@ defmodule Contexir.Context do
   Manages the process-local active layer stack and shared context map.
   """
 
-  @doc"""
+  @doc """
   This is where everything gets executed.
   """
   def with_layers(layers, mod, fun, args) do
