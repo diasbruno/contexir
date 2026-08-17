@@ -81,4 +81,22 @@ defmodule Contexir.Context do
       set_ctx(old)
     end
   end
+
+  @doc """
+  Runs a function with temporary active layers and context.
+  """
+  def with_scope(layers, ctx, fun) when is_function(fun, 0) do
+    old_layers = active_layers()
+    old_ctx = get_ctx()
+
+    Process.put(:active_layers, layers)
+    set_ctx(ctx)
+
+    try do
+      fun.()
+    after
+      Process.put(:active_layers, old_layers)
+      set_ctx(old_ctx)
+    end
+  end
 end

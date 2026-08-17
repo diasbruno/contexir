@@ -108,4 +108,59 @@ defmodule ContexirContextActivationTest do
       Contexir.Context.deactivate(ContexirContextActivationTest.MobileLayer)
     end
   end
+
+  test "plain Task does not inherit context or active layers" do
+    Contexir.Context.with_scope(
+      [ContexirContextActivationTest.MobileLayer],
+      %{request_id: :parent},
+      fn ->
+        task =
+          Task.async(fn ->
+            {Contexir.Context.current(), Contexir.Context.active_layers()}
+          end)
+
+        assert Task.await(task) == {%{}, []}
+      end
+    )
+  end
+
+  test "Contexir.Task inherits context and active layers" do
+    Contexir.Context.with_scope(
+      [ContexirContextActivationTest.MobileLayer],
+      %{request_id: :parent},
+      fn ->
+        task =
+          Contexir.Task.async(fn ->
+            {
+              Contexir.Context.current(),
+              Contexir.Context.active_layers(),
+              Contexir.with_layers(
+                [],
+                ContexirContextActivationTest.Target.execute(%{string: "start"}, %{})
+              )
+            }
+          end)
+
+        assert Contexir.Task.await(task) ==
+                 {
+                   %{request_id: :parent},
+                   [ContexirContextActivationTest.MobileLayer],
+                   %{string: "start mobile target"}
+                 }
+      end
+    )
+  end
+
+  test "Contexir.Task async module function arity inherits scope" do
+    Contexir.Context.with_scope([], %{request_id: :module_task}, fn ->
+      task =
+        Contexir.Task.async(
+          ContexirContextActivationTest.Target,
+          :read,
+          [%{}, %{}]
+        )
+
+      assert Contexir.Task.await(task) == %{request_id: :module_task}
+    end)
+  end
 end
