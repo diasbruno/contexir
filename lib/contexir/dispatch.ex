@@ -28,6 +28,8 @@ defmodule Contexir.Dispatch do
   are stored process-locally to ensure concurrency safety.
   """
 
+  @execution_key :contexir_execution_plan
+
   defp extract_ctx(args) do
     case args do
       [] -> {[], nil}
@@ -87,9 +89,14 @@ defmodule Contexir.Dispatch do
 
     execution_plan = build_plan(layers, module, fun)
 
-    Process.put(:active_layers, execution_plan)
+    old_execution_plan = Process.get(@execution_key)
+    Process.put(@execution_key, execution_plan)
 
-    continue(module, fun, args)
+    try do
+      continue(module, fun, args)
+    after
+      Process.put(@execution_key, old_execution_plan)
+    end
   end
 
   @doc """
@@ -119,7 +126,7 @@ defmodule Contexir.Dispatch do
   should only be called from inside `defpartial …, mode: :around` blocks.
   """
   def continue(module, fun, args) do
-    case Process.get(:active_layers) do
+    case Process.get(@execution_key) do
       {[], before, after_} ->
         Enum.each(before, fn layer ->
           ctx = Contexir.Context.get_ctx()
@@ -138,7 +145,7 @@ defmodule Contexir.Dispatch do
 
       {around, before, after_} ->
         [current | rest] = around
-        Process.put(:active_layers, {rest, before, after_})
+        Process.put(@execution_key, {rest, before, after_})
         ctx = Contexir.Context.get_ctx()
         apply(current, fun, [module, :around | args] ++ [ctx])
     end

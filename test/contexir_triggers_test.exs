@@ -18,6 +18,10 @@ defmodule ContexirTriggersTest do
     def log(entry) do
       Process.put(:contexir_order, Process.get(:contexir_order, []) ++ [entry])
     end
+
+    def active_layers(_acc, _ctx) do
+      Contexir.Context.active_layers()
+    end
   end
 
   deflayer BeforeAfter do
@@ -89,6 +93,16 @@ defmodule ContexirTriggersTest do
     end
   end
 
+  deflayer ActivationProbe do
+    defpartial ContexirTriggersTest.Target.active_layers(acc, ctx), mode: :around do
+      continue(
+        ContexirTriggersTest.Target,
+        :active_layers,
+        [acc]
+      )
+    end
+  end
+
   #
   # Tests
   #
@@ -128,5 +142,14 @@ defmodule ContexirTriggersTest do
              "B around end",
              "A around end"
            ]
+  end
+
+  test "keeps activation layers separate from dispatch execution state" do
+    layers = [ContexirTriggersTest.ActivationProbe]
+
+    assert Contexir.with_layers(
+             layers,
+             ContexirTriggersTest.Target.active_layers(%{}, %{})
+           ) == layers
   end
 end
