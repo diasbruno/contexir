@@ -1,6 +1,17 @@
 import Contexir.Layer
 require Contexir
 
+# This is the dispatch kernel in miniature:
+#
+#   * :before partials run for side effects and do not replace the result.
+#   * :around partials decide when the next implementation runs through
+#     continue/3.
+#   * :after partials run once the result has been produced.
+#
+# The current context is already tracked by Contexir, so calls to continue/3 only
+# pass the business arguments. The dispatcher appends the active context when it
+# invokes the next function.
+
 defmodule Examples.BasicLayers.Account do
   use Contexir
 

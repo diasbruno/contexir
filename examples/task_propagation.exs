@@ -1,6 +1,10 @@
 import Contexir.Layer
 require Contexir
 
+# Process dictionary state is process-local, so a plain Task would not inherit
+# the caller's active layers or context. Contexir.Task captures the current scope
+# and installs it inside the spawned task before running the function.
+
 defmodule Examples.TaskPropagation.Worker do
   use Contexir
 

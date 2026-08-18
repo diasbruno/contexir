@@ -1,62 +1,66 @@
 import Contexir.Layer
 require Contexir
 
-defmodule Examples.DeclarativeContext.Page do
+# Declarative context modules keep selection logic out of the call site. The
+# request data below is translated into a list of active layers, then dispatch
+# uses those layers for the duration of the call.
+
+defmodule Examples.DeclarativeContext.Report do
   use Contexir
 
-  def render(page, _ctx) do
-    page
+  def build(report, _ctx) do
+    report
   end
 end
 
-deflayer Examples.DeclarativeContext.Mobile do
-  defpartial Examples.DeclarativeContext.Page.render(page, _ctx), mode: :around do
+deflayer Examples.DeclarativeContext.InternalAudience do
+  defpartial Examples.DeclarativeContext.Report.build(report, _ctx), mode: :around do
     continue(
-      Examples.DeclarativeContext.Page,
-      :render,
-      [%{page | layout: :mobile}]
+      Examples.DeclarativeContext.Report,
+      :build,
+      [%{report | sections: report.sections ++ [:margin_notes]}]
     )
   end
 end
 
-deflayer Examples.DeclarativeContext.LowBattery do
-  defpartial Examples.DeclarativeContext.Page.render(page, _ctx), mode: :around do
+deflayer Examples.DeclarativeContext.ExecutiveSummary do
+  defpartial Examples.DeclarativeContext.Report.build(report, _ctx), mode: :around do
     continue(
-      Examples.DeclarativeContext.Page,
-      :render,
-      [%{page | effects: :reduced}]
+      Examples.DeclarativeContext.Report,
+      :build,
+      [%{report | sections: [:summary | report.sections]}]
     )
   end
 end
 
-defcontext Examples.DeclarativeContext.AppContext do
-  layer(Examples.DeclarativeContext.Mobile, when: &(&1.network == :cellular))
-  layer(Examples.DeclarativeContext.LowBattery, when: &(&1.battery < 20))
+defcontext Examples.DeclarativeContext.ReportContext do
+  layer(Examples.DeclarativeContext.InternalAudience, when: &(&1.audience == :internal))
+  layer(Examples.DeclarativeContext.ExecutiveSummary, when: &(&1.role in [:director, :vp]))
 end
 
-page =
+report =
   Contexir.with_context(
-    Examples.DeclarativeContext.AppContext,
-    %{network: :cellular, battery: 10},
-    Examples.DeclarativeContext.Page.render(%{layout: :desktop, effects: :full}, %{})
+    Examples.DeclarativeContext.ReportContext,
+    %{audience: :internal, role: :vp},
+    Examples.DeclarativeContext.Report.build(%{sections: [:metrics, :risks]}, %{})
   )
 
-IO.inspect(page, label: "context-aware page")
+IO.inspect(report, label: "internal executive report")
 
-page =
+report =
   Contexir.with_context(
-    Examples.DeclarativeContext.AppContext,
-    %{network: :cellular, battery: 30},
-    Examples.DeclarativeContext.Page.render(%{layout: :desktop, effects: :full}, %{})
+    Examples.DeclarativeContext.ReportContext,
+    %{audience: :partner, role: :vp},
+    Examples.DeclarativeContext.Report.build(%{sections: [:metrics, :risks]}, %{})
   )
 
-IO.inspect(page, label: "context-aware page")
+IO.inspect(report, label: "partner executive report")
 
-page =
+report =
   Contexir.with_context(
-    Examples.DeclarativeContext.AppContext,
-    %{network: :wifi, battery: 30},
-    Examples.DeclarativeContext.Page.render(%{layout: :desktop, effects: :full}, %{})
+    Examples.DeclarativeContext.ReportContext,
+    %{audience: :internal, role: :analyst},
+    Examples.DeclarativeContext.Report.build(%{sections: [:metrics, :risks]}, %{})
   )
 
-IO.inspect(page, label: "context-aware page")
+IO.inspect(report, label: "internal analyst report")

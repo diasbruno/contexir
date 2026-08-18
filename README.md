@@ -2,28 +2,15 @@
 
 ![contexir](https://raw.githubusercontent.com/diasbruno/contexir/refs/heads/development/assets/github-banner.png "contexir")
 
-> 🧠 Context-Oriented Programming for Elixir — composable layers for dynamic, context-aware behavior.
+Context-oriented programming for Elixir.
 
-**Contexir** brings *Context-Oriented Programming (COP)* semantics to Elixir.
-It lets you define **layers** that dynamically refine how your modules behave,
-based on runtime context — without modifying the original code.
+Contexir lets you define layers that refine function behavior at runtime.
+Layers are activated dynamically, scoped to the current BEAM process, and can be
+selected explicitly or from context values.
 
----
+## Installation
 
-## ✨ Features
-
-- 🧩 **Layered Behavior** — define context-sensitive extensions for existing functions.
-- 🪞 **Execution Plan** — predictable order of execution (`around`, `before`, `after`).
-- ⚙️ **Composable Layers** — group and reuse layers (`use_layers`).
-- 🧠 **Dynamic Activation** — activate layers with `Contexir.with_layers/2`.
-- 💡 **Pure Functional Design** — no global mutation, fully scoped per process.
-- 🧰 **Simple API** — use regular Elixir syntax; no complex macros required.
-
----
-
-## 🚀 Installation
-
-Add **Contexir** to your `mix.exs`:
+Add Contexir to your `mix.exs`:
 
 ```elixir
 def deps do
@@ -33,218 +20,238 @@ def deps do
 end
 ```
 
-Then fetch the dependency:
+Then fetch dependencies:
 
 ```bash
 mix deps.get
 ```
 
----
+## Core Concepts
 
-## 🧩 Basic Example
+### Base Modules
+
+Use `Contexir` in modules whose functions can be refined by layers:
 
 ```elixir
-import Contexir.Layer
-require Contexir
-
 defmodule Account do
   use Contexir
 
-  def withdraw(acc, amt, _ctx) do
-    IO.puts("primary")
-    %{acc | balance: acc.balance - amt}
+  def withdraw(account, amount, _ctx) do
+    %{account | balance: account.balance - amount}
   end
 end
+```
+
+Contexir expects the final argument to be a context value, usually a map.
+
+### Layers
+
+A layer defines partial behavior for an existing function.
+
+```elixir
+import Contexir.Layer
 
 deflayer LoggingLayer do
-  defpartial Account.withdraw(acc, amt, ctx), mode: :before do
-    IO.puts("[BEFORE] Logging withdrawal of #{amt}")
+  defpartial Account.withdraw(_account, amount, _ctx), mode: :before do
+    IO.puts("withdrawing #{amount}")
   end
 
-  defpartial Account.withdraw(acc, amt, ctx), mode: :around do
-    IO.puts("[AROUND] Starting transaction")
-    result = continue(Account, :withdraw, [acc, amt, ctx])
-    IO.puts("[AROUND] Finished transaction")
+  defpartial Account.withdraw(account, amount, _ctx), mode: :around do
+    result = continue(Account, :withdraw, [account, amount])
+    IO.puts("new balance: #{result.balance}")
     result
   end
 
-  defpartial Account.withdraw(_acc, _amt, _ctx), mode: :after do
-    IO.puts("[AFTER] Done.")
+  defpartial Account.withdraw(_account, _amount, _ctx), mode: :after do
+    IO.puts("withdrawal complete")
   end
 end
+```
+
+Supported partial modes:
+
+| Mode | Description |
+| --- | --- |
+| `:around` | Wraps the next layer or primary function. Call `continue/3` to proceed. |
+| `:before` | Runs before the primary function. |
+| `:after` | Runs after the primary function returns. |
+
+An `:around` partial may short-circuit the call by not calling `continue/3`.
+
+### Dynamic Activation
+
+Activate layers for a single call with `Contexir.with_layers/2`:
+
+```elixir
+require Contexir
 
 Contexir.with_layers(
   [LoggingLayer],
-  Account.withdraw(%{balance: 1000}, 100, %{})
+  Account.withdraw(%{balance: 100}, 25, %{})
 )
 ```
 
-**Output:**
+Layer activation and context are process-local. They do not automatically cross
+`spawn`, `Task.async`, or other BEAM process boundaries.
 
-```
-[AROUND] Starting transaction
-[BEFORE] Logging withdrawal of 100
-primary
-[AFTER] Done.
-[AROUND] Finished transaction
-```
+## Execution Order
 
----
+For active layers `[A, B]`, dispatch follows this order:
 
-## 🧭 Execution Model
-
-When multiple layers are active, the execution order follows this pattern:
-
-| Mode        | Direction     | Description                                                 |
-| ----------- | ------------- | ----------------------------------------------------------- |
-| **around**  | outer → inner | Each `around` wraps the next layer. Must call `continue/3`. |
-| **before**  | outer → inner | Runs before the primary function.                           |
-| **primary** | —             | The original function being refined.                        |
-| **after**   | inner → outer | Runs after the primary returns.                             |
-
-Example for `[A, B]` active layers:
-
-```
-A:around
-B:around
-A:before
-B:before
-primary
-B:after
-A:after
-B:around end
-A:around end
+```text
+A around
+  B around
+    A before
+    B before
+      primary
+    B after
+    A after
+  B around end
+A around end
 ```
 
----
+`:after` partials run inside-out, after the primary function returns.
 
-## ⚙️ Layer Composition
+## Layer Composition
 
 Layers can include other layers:
 
 ```elixir
 deflayer SecureLayer do
-  use_layers [AuthLayer, LoggingLayer]
+  use_layers([Authentication, Audit])
 end
-
-Contexir.with_layers(
-  [SecureLayer],
-  Checkout.submit(cart, %{user: user})
-)
 ```
 
-Layers can also declare relationships that are validated before activation:
+Layers can also declare composition relationships:
 
 ```elixir
 deflayer SecureCheckout do
-  requires Authentication
-  conflicts_with GuestCheckout
-  before Audit
+  requires(Authentication)
+  conflicts_with(GuestCheckout)
+  before(Audit)
+  after_layer(RateLimit)
 end
+```
 
+`requires` and `conflicts_with` are validated by `Contexir.Layer.resolve/1` and
+before activation through `Contexir.with_layers/2`.
+
+```elixir
 Contexir.Layer.resolve([Authentication, SecureCheckout, Audit])
 #=> {:ok, [Authentication, SecureCheckout, Audit]}
 ```
 
----
+`before` and `after_layer` are recorded as metadata and reserved for precedence
+ordering. Runtime ordering from those relationships is not implemented yet.
 
-## 🧠 Declarative Context Activation
+## Layer Introspection
 
-Use `defcontext` when layers should be selected from context values:
+Use `Contexir.Layer.info/1` to inspect layer metadata:
 
 ```elixir
-defcontext AppContext do
-  layer MobileLayout, when: &(&1.network == :cellular)
-  layer LowBattery, when: &(&1.battery < 20)
-end
+Contexir.Layer.info(SecureCheckout)
+#=> %{
+#=>   module: SecureCheckout,
+#=>   partials: [...],
+#=>   includes: [],
+#=>   requires: [Authentication],
+#=>   conflicts_with: [GuestCheckout],
+#=>   before: [Audit],
+#=>   after: [RateLimit],
+#=>   predicate?: false
+#=> }
+```
 
+## Declarative Context Activation
+
+Use `defcontext` to select layers from context values:
+
+```elixir
+defcontext CheckoutContext do
+  layer(Authentication, when: & &1[:user])
+  layer(Audit, when: & &1[:audit?])
+  layer(FraudReview, when: &(&1[:risk_score] >= 70))
+end
+```
+
+Then dispatch with layers selected from the context:
+
+```elixir
 Contexir.with_context(
-  AppContext,
-  %{network: :cellular, battery: 10},
-  Page.render(%{layout: :desktop}, %{})
+  CheckoutContext,
+  %{user: "alice", audit?: true, risk_score: 82},
+  Checkout.submit(cart, %{})
 )
 ```
 
----
+The provided context replaces the final argument of the target call.
 
-## ⚡ Task Propagation
+## Context API
 
-Regular BEAM processes do not inherit Contexir context or active layers. Use
-`Contexir.Task` when a task should run with the caller's current Contexir scope:
+`Contexir.Context` exposes helpers for process-local context:
+
+```elixir
+Contexir.Context.with_context(%{request_id: "req-123"}, fn ->
+  Contexir.Context.get(:request_id)
+  Contexir.Context.put(:user, "alice")
+  Contexir.Context.update(:attempts, 1, &(&1 + 1))
+  Contexir.Context.current()
+end)
+```
+
+For lower-level scope work, `Contexir.Context.with_scope/3` temporarily installs
+both active layers and context.
+
+## Task Propagation
+
+Plain BEAM tasks do not inherit Contexir state. Use `Contexir.Task` when a task
+should run with the caller's current active layers and context:
 
 ```elixir
 Contexir.Context.with_scope([TraceLayer], %{request_id: "req-123"}, fn ->
   task =
     Contexir.Task.async(fn ->
-      Contexir.with_layers([], Worker.run("job", Contexir.Context.current()))
+      Contexir.with_layers(
+        [],
+        Worker.run("job", Contexir.Context.current())
+      )
     end)
 
   Contexir.Task.await(task)
 end)
 ```
 
----
+`Contexir.Task.async/1` wraps Elixir's linked `Task.async/1`.
 
-## 📚 Runnable Examples
+## Examples
 
-The `examples/` directory contains small scripts for the main APIs:
+The `examples/` directory contains runnable scripts:
 
 ```bash
 mix run examples/basic_layers.exs
+mix run examples/composition_resolution.exs
+mix run examples/declarative_context.exs
+mix run examples/task_propagation.exs
+mix run examples/checkout_flow.exs
 ```
 
-Available examples:
+`examples/checkout_flow.exs` is the most complete example. It combines
+declarative context rules, composition validation, layered dispatch, context
+updates, and task propagation.
 
-* `examples/basic_layers.exs`
-* `examples/composition_resolution.exs`
-* `examples/declarative_context.exs`
-* `examples/task_propagation.exs`
-* `examples/checkout_flow.exs` — end-to-end example combining context rules,
-  composition validation, layered dispatch, and task propagation.
+## Current Limitations
 
----
+* `before` and `after_layer` relationships are metadata only; precedence
+  ordering and cycle detection are not implemented yet.
+* Context and active layers are process-local. Use `Contexir.Task` for explicit
+  task propagation.
+* `Contexir.explain` and telemetry integration are not implemented yet.
 
-## 💡 Why Context-Oriented Programming?
-
-Traditional OOP or FP decomposition struggles with **runtime behavioral variation** —
-when behavior must adapt to *context* (e.g., user role, request origin, environment).
-
-COP solves this by:
-
-* Separating *context-dependent* behavior into **layers**.
-* Activating those layers dynamically, without polluting core logic.
-* Allowing clean, composable runtime adaptation.
-
-Contexir brings these ideas to Elixir — leveraging the BEAM’s process isolation and pure data flow.
-
----
-
-## 📦 Project Goals
-
-* Keep the model **simple and functional**.
-* Serve as a foundation for **runtime adaptation libraries** in Elixir.
-* Explore **dynamic system composition** patterns (adaptive services, domain-specific contexts, etc.).
-
----
-
-## 🧰 Roadmap
-
-* [x] Layer predicates for context-based activation
-* [x] Declarative context activation
-* [x] Task scope propagation
-* [ ] Precedence ordering and cycle detection
-* [ ] Debug/tracing integration
-
----
-
-## 📄 License
+## License
 
 Unlicense
 
----
+## Learn More
 
-## 🧠 Learn More
-
-* [Context-Oriented Programming (Wikipedia)](https://en.wikipedia.org/wiki/Context-oriented_programming)
-* [Lisp COP model](https://dl.acm.org/doi/10.1145/1330511.1330517)
+* [Context-Oriented Programming](https://en.wikipedia.org/wiki/Context-oriented_programming)
 * [Aspect-Oriented Programming](https://en.wikipedia.org/wiki/Aspect-oriented_programming)

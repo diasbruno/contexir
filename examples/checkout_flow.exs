@@ -1,6 +1,11 @@
 import Contexir.Layer
 require Contexir
 
+# This example keeps checkout's core rule deliberately ordinary: calculate the
+# final cart from the cart data. The surrounding layers add request-specific
+# behavior such as authentication, loyalty discounts, fraud checks, audit
+# messages, and task propagation.
+
 defmodule Examples.CheckoutFlow.Checkout do
   use Contexir
 
@@ -16,13 +21,15 @@ defmodule Examples.CheckoutFlow.Checkout do
   end
 
   defp append(cart, event), do: %{cart | events: cart.events ++ [event]}
-  defp subtotal(cart), do: Enum.reduce(cart.items, 0, & &2 + &1.price)
+  defp subtotal(cart), do: Enum.reduce(cart.items, 0, &(&2 + &1.price))
   defp apply_discount(total, discount), do: max(total - discount, 0)
   defp apply_shipping(total, shipping), do: total + shipping
   defp format_money(amount), do: "$#{:erlang.float_to_binary(amount / 1, decimals: 2)}"
 end
 
 deflayer Examples.CheckoutFlow.Authentication do
+  # :before partials are useful for validation or context enrichment. Here the
+  # layer records that downstream layers can treat the request as authenticated.
   defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :before do
     Contexir.Context.put(:authenticated?, true)
     send(cart.audit_pid, "before: authenticated #{Contexir.Context.get(:user)}")
@@ -32,6 +39,9 @@ end
 deflayer Examples.CheckoutFlow.LoyaltyDiscount do
   requires(Examples.CheckoutFlow.Authentication)
 
+  # :around partials can alter the arguments before the primary function runs.
+  # continue/3 receives only the business arguments; Contexir carries the
+  # current context separately.
   defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
     discount = 10
     Contexir.Context.put(:loyalty_discount, discount)
@@ -46,14 +56,16 @@ deflayer Examples.CheckoutFlow.LoyaltyDiscount do
 end
 
 deflayer Examples.CheckoutFlow.Audit do
+  # Audit wraps the rest of the call, so it can emit messages before and after
+  # the primary checkout calculation and all inner around partials.
   defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
     send(cart.audit_pid, "around: audit start #{Contexir.Context.get(:request_id)}")
 
     result =
       continue(
-	Examples.CheckoutFlow.Checkout,
-	:submit,
-	[%{cart | events: cart.events ++ ["around: audit start"]}]
+        Examples.CheckoutFlow.Checkout,
+        :submit,
+        [%{cart | events: cart.events ++ ["around: audit start"]}]
       )
 
     send(cart.audit_pid, "around: audit end #{Contexir.Context.get(:request_id)}")
@@ -113,6 +125,8 @@ deflayer Examples.CheckoutFlow.GuestCheckout do
 end
 
 defcontext Examples.CheckoutFlow.RequestContext do
+  # Context rules translate request data into layers. Composition validation then
+  # checks requirements and conflicts before any checkout code runs.
   layer(Examples.CheckoutFlow.Authentication, when: & &1[:user])
   layer(Examples.CheckoutFlow.GuestCheckout, when: &is_nil(&1[:user]))
   layer(Examples.CheckoutFlow.Audit, when: & &1[:audit?])
@@ -197,6 +211,15 @@ scenario = Map.get(scenarios, choice, scenarios["1"])
 
 subtotal = Enum.sum(Enum.map(scenario.items, & &1.price))
 context = Map.put(scenario.context, :subtotal, subtotal)
+
+# resolve_context!/2 performs two steps:
+#
+#   * it evaluates each RequestContext rule against the request-shaped context;
+#   * it resolves the resulting layers, expanding includes and rejecting missing
+#     requirements or conflicts before the checkout task starts.
+#
+# For example, the VIP scenario activates Authentication, LoyaltyDiscount,
+# FreeShipping, PriorityCheckout, FraudReview, and Audit from plain request data.
 layers = Contexir.Layer.resolve_context!(Examples.CheckoutFlow.RequestContext, context)
 
 IO.puts("\nscenario:")
@@ -219,10 +242,12 @@ cart = %{
 
 task =
   Contexir.Context.with_scope(layers, context, fn ->
+    # The checkout work runs in another process, but Contexir.Task preserves the
+    # scope selected above.
     Contexir.Task.async(fn ->
       Contexir.with_layers(
-	[],
-	Examples.CheckoutFlow.Checkout.submit(cart, Contexir.Context.current())
+        [],
+        Examples.CheckoutFlow.Checkout.submit(cart, Contexir.Context.current())
       )
     end)
   end)
