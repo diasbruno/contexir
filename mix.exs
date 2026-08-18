@@ -5,7 +5,7 @@ defmodule Contexir.MixProject do
     [
       name: "Contexir",
       source_url: "https://github.com/diasbruno/contexir",
-      version: "0.1.8",
+      version: "0.2.0",
       elixir: "~> 1.18",
       app: :contexir,
       description: description(),
