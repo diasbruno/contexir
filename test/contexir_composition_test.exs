@@ -10,14 +10,18 @@ defmodule ContexirCompositionTest do
   end
 
   deflayer Outer do
-    defpartial ContexirCompositionTest.Target.execute(acc, _ctx), mode: :around do
-      continue(ContexirCompositionTest.Target, :execute, [acc])
+    refine ContexirCompositionTest.Target do
+      defpartial execute(acc, _ctx), mode: :around do
+        continue([acc])
+      end
     end
   end
 
   deflayer Inner do
-    defpartial ContexirCompositionTest.Target.execute(acc, _ctx), mode: :around do
-      continue(ContexirCompositionTest.Target, :execute, [acc])
+    refine ContexirCompositionTest.Target do
+      defpartial execute(acc, _ctx), mode: :around do
+        continue([acc])
+      end
     end
   end
 

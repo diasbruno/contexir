@@ -14,12 +14,10 @@ defmodule Examples.TaskPropagation.Worker do
 end
 
 deflayer Examples.TaskPropagation.Trace do
-  defpartial Examples.TaskPropagation.Worker.run(value, _ctx), mode: :around do
-    continue(
-      Examples.TaskPropagation.Worker,
-      :run,
-      ["traced #{value}"]
-    )
+  refine Examples.TaskPropagation.Worker do
+    defpartial run(value, _ctx), mode: :around do
+      continue(["traced #{value}"])
+    end
   end
 end
 

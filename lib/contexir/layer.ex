@@ -17,22 +17,24 @@ defmodule Contexir.Layer do
   ## DSL Overview
 
       deflayer LoggingLayer do
-        # runs before the original function
-        defpartial SomeModule.some_fun(arg1, arg2, ctx), mode: :before do
-          IO.puts("about to call some_fun")
-        end
+        refine SomeModule do
+          # runs before the original function
+          defpartial some_fun(arg1, arg2, ctx), mode: :before do
+            IO.puts("about to call some_fun")
+          end
 
-        # wraps around the original — must call `continue/3`
-        defpartial SomeModule.some_fun(arg1, arg2, ctx), mode: :around do
-          IO.puts("entering")
-          result = continue(SomeModule, :some_fun, [arg1, arg2, ctx])
-          IO.puts("exiting")
-          result
-        end
+          # wraps around the original and proceeds through `continue/1`
+          defpartial some_fun(arg1, arg2, _ctx), mode: :around do
+            IO.puts("entering")
+            result = continue([arg1, arg2])
+            IO.puts("exiting")
+            result
+          end
 
-        # runs after the original function
-        defpartial SomeModule.some_fun(arg1, arg2, ctx), mode: :after do
-          IO.puts("some_fun finished")
+          # runs after the original function
+          defpartial some_fun(_arg1, _arg2, _ctx), mode: :after do
+            IO.puts("some_fun finished")
+          end
         end
       end
   """
@@ -138,8 +140,10 @@ defmodule Contexir.Layer do
   ## Example
 
       deflayer LoggingLayer do
-        defpartial Account.withdraw(acc, amt, ctx), mode: :before do
-          IO.puts("[BEFORE] withdrawing \#{amt}")
+        refine Account do
+          defpartial withdraw(_acc, amt, _ctx), mode: :before do
+            IO.puts("[BEFORE] withdrawing \#{amt}")
+          end
         end
       end
   """
@@ -202,22 +206,20 @@ defmodule Contexir.Layer do
   `:before`, `:around`, or `:after`.
 
   - `:before` — runs before the primary function
-  - `:around` — wraps the next layer or base function (must call `continue/3`)
+  - `:around` — wraps the next layer or base function (call `continue/1`)
   - `:after` — runs after the primary function returns
 
   ## Example
 
-      defpartial Account.withdraw(acc, amt, ctx), mode: :around do
+      defpartial Account.withdraw(acc, amt, _ctx), mode: :around do
         IO.puts("[AROUND] start")
-        result = continue(Account, :withdraw, [acc, amt, ctx])
+        result = continue([acc, amt])
         IO.puts("[AROUND] end")
         result
       end
   """
   defmacro defpartial(signature, opts \\ [], do: body) do
-    {{:., _x, [{_y, _m, mod}, fun]}, _z, args} = signature
-
-    the_module = Module.concat(mod)
+    {the_module, fun, args} = partial_signature(signature, __CALLER__)
 
     mode = Keyword.get(opts, :mode, :around)
 
@@ -229,13 +231,71 @@ defmodule Contexir.Layer do
       }
 
       def unquote(fun)(unquote(the_module), unquote(mode), unquote_splicing(args)) do
-        import Contexir.Dispatch, only: [continue: 3]
+        import Contexir.Dispatch, only: [continue: 1, continue: 3]
         unquote(body)
       end
 
       def has_mode_defined(unquote(the_module), unquote(fun), unquote(mode)), do: true
     end
   end
+
+  defp partial_signature(signature, caller) do
+    case Macro.decompose_call(signature) do
+      {target, fun, args} ->
+        {Macro.expand(target, caller), fun, args}
+
+      {fun, args} ->
+        case Module.get_attribute(caller.module, :contexir_refine_target) do
+          nil ->
+            raise ArgumentError,
+                  "local defpartial requires a target module. Wrap it in refine Target do ... end"
+
+          target ->
+            {target, fun, args}
+        end
+    end
+  end
+
+  @doc """
+  Defines partials for a single target module.
+
+  Inside a `refine` block, `defpartial` may omit the target module:
+
+      deflayer LoggingLayer do
+        refine Account do
+          defpartial withdraw(account, amount, _ctx), mode: :around do
+            continue([account, amount])
+          end
+        end
+      end
+  """
+  defmacro refine(target, do: block) do
+    target = Macro.expand(target, __CALLER__)
+    block = rewrite_refine_block(block, target)
+
+    quote do
+      unquote(block)
+    end
+  end
+
+  defp rewrite_refine_block(block, target) do
+    Macro.prewalk(block, fn
+      {:defpartial, meta, [signature, opts, body]} ->
+        {:defpartial, meta, [refined_signature(signature, target), opts, body]}
+
+      {:defpartial, meta, [signature, body]} ->
+        {:defpartial, meta, [refined_signature(signature, target), body]}
+
+      ast ->
+        ast
+    end)
+  end
+
+  defp refined_signature({fun, meta, args}, target) when is_atom(fun) and is_list(args) do
+    {{:., meta, [target, fun]}, meta, args}
+  end
+
+  defp refined_signature(signature, _target), do: signature
 
   @doc """
   Includes or *reuses* other layers inside the current one.

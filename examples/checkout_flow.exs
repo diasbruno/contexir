@@ -30,9 +30,11 @@ end
 deflayer Examples.CheckoutFlow.Authentication do
   # :before partials are useful for validation or context enrichment. Here the
   # layer records that downstream layers can treat the request as authenticated.
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :before do
-    Contexir.Context.put(:authenticated?, true)
-    send(cart.audit_pid, "before: authenticated #{Contexir.Context.get(:user)}")
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :before do
+      Contexir.Context.put(:authenticated?, true)
+      send(cart.audit_pid, "before: authenticated #{Contexir.Context.get(:user)}")
+    end
   end
 end
 
@@ -40,50 +42,43 @@ deflayer Examples.CheckoutFlow.LoyaltyDiscount do
   requires(Examples.CheckoutFlow.Authentication)
 
   # :around partials can alter the arguments before the primary function runs.
-  # continue/3 receives only the business arguments; Contexir carries the
-  # current context separately.
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
-    discount = 10
-    Contexir.Context.put(:loyalty_discount, discount)
-    send(cart.audit_pid, "around: loyalty discount applied")
+  # refine names the target once, and continue/1 receives only the business
+  # arguments. Contexir carries the current context separately.
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :around do
+      discount = 10
+      Contexir.Context.put(:loyalty_discount, discount)
+      send(cart.audit_pid, "around: loyalty discount applied")
 
-    continue(
-      Examples.CheckoutFlow.Checkout,
-      :submit,
-      [%{cart | discount: cart.discount + discount}]
-    )
+      continue([%{cart | discount: cart.discount + discount}])
+    end
   end
 end
 
 deflayer Examples.CheckoutFlow.Audit do
   # Audit wraps the rest of the call, so it can emit messages before and after
   # the primary checkout calculation and all inner around partials.
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
-    send(cart.audit_pid, "around: audit start #{Contexir.Context.get(:request_id)}")
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :around do
+      send(cart.audit_pid, "around: audit start #{Contexir.Context.get(:request_id)}")
 
-    result =
-      continue(
-        Examples.CheckoutFlow.Checkout,
-        :submit,
-        [%{cart | events: cart.events ++ ["around: audit start"]}]
-      )
+      result = continue([%{cart | events: cart.events ++ ["around: audit start"]}])
 
-    send(cart.audit_pid, "around: audit end #{Contexir.Context.get(:request_id)}")
-    %{result | events: result.events ++ ["around: audit end"]}
-  end
+      send(cart.audit_pid, "around: audit end #{Contexir.Context.get(:request_id)}")
+      %{result | events: result.events ++ ["around: audit end"]}
+    end
 
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :after do
-    send(cart.audit_pid, "after: audit recorded")
+    defpartial submit(cart, _ctx), mode: :after do
+      send(cart.audit_pid, "after: audit recorded")
+    end
   end
 end
 
 deflayer Examples.CheckoutFlow.FreeShipping do
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
-    continue(
-      Examples.CheckoutFlow.Checkout,
-      :submit,
-      [%{cart | shipping: 0, events: cart.events ++ ["around: free shipping"]}]
-    )
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :around do
+      continue([%{cart | shipping: 0, events: cart.events ++ ["around: free shipping"]}])
+    end
   end
 end
 
@@ -91,36 +86,36 @@ deflayer Examples.CheckoutFlow.PriorityCheckout do
   requires(Examples.CheckoutFlow.Authentication)
   conflicts_with(Examples.CheckoutFlow.GuestCheckout)
 
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
-    continue(
-      Examples.CheckoutFlow.Checkout,
-      :submit,
-      [%{cart | events: cart.events ++ ["around: priority checkout"]}]
-    )
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :around do
+      continue([%{cart | events: cart.events ++ ["around: priority checkout"]}])
+    end
   end
 end
 
 deflayer Examples.CheckoutFlow.FraudReview do
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :before do
-    send(cart.audit_pid, "before: fraud review #{Contexir.Context.get(:risk_score)}")
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :before do
+      send(cart.audit_pid, "before: fraud review #{Contexir.Context.get(:risk_score)}")
+    end
   end
 end
 
 deflayer Examples.CheckoutFlow.ManualApproval do
   requires(Examples.CheckoutFlow.FraudReview)
 
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :before do
-    send(cart.audit_pid, "before: manual approval required")
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :before do
+      send(cart.audit_pid, "before: manual approval required")
+    end
   end
 end
 
 deflayer Examples.CheckoutFlow.GuestCheckout do
-  defpartial Examples.CheckoutFlow.Checkout.submit(cart, _ctx), mode: :around do
-    continue(
-      Examples.CheckoutFlow.Checkout,
-      :submit,
-      [%{cart | events: cart.events ++ ["around: guest checkout"]}]
-    )
+  refine Examples.CheckoutFlow.Checkout do
+    defpartial submit(cart, _ctx), mode: :around do
+      continue([%{cart | events: cart.events ++ ["around: guest checkout"]}])
+    end
   end
 end
 

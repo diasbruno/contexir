@@ -1,6 +1,7 @@
 defmodule ContexirLayerTest do
   use ExUnit.Case, async: false
   import Contexir.Layer
+  require Contexir
 
   defmodule Target do
     def execute(acc, _ctx), do: acc
@@ -37,6 +38,14 @@ defmodule ContexirLayerTest do
     after_layer(ContexirLayerTest.GroupLayer)
   end
 
+  deflayer RefineLayer do
+    refine ContexirLayerTest.Target do
+      defpartial execute(acc, _ctx), mode: :around do
+        continue([acc ++ [:refined]])
+      end
+    end
+  end
+
   test "layer metadata describes partials predicate and included layers" do
     assert Contexir.Layer.info(ContexirLayerTest.ExampleLayer) == %{
              module: ContexirLayerTest.ExampleLayer,
@@ -67,5 +76,18 @@ defmodule ContexirLayerTest do
     assert info.conflicts_with == [ContexirLayerTest.PredicateLayer]
     assert info.before == [ContexirLayerTest.PredicateLayer]
     assert info.after == [ContexirLayerTest.GroupLayer]
+  end
+
+  test "refine scopes local partials to a target module" do
+    assert Contexir.Layer.info(ContexirLayerTest.RefineLayer).partials == [
+             %{module: ContexirLayerTest.Target, function: :execute, mode: :around}
+           ]
+  end
+
+  test "continue shorthand uses the current refined function" do
+    assert Contexir.with_layers(
+             [ContexirLayerTest.RefineLayer],
+             ContexirLayerTest.Target.execute([], %{})
+           ) == [:refined]
   end
 end

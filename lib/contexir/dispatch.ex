@@ -20,7 +20,7 @@ defmodule Contexir.Dispatch do
         B around end
       A around end
 
-  Where each layer’s `:around` must explicitly call `continue/3` to proceed to
+  Where each layer’s `:around` must explicitly call `continue/1` to proceed to
   the next layer or the base function. If a layer omits that call, execution
   stops there — the layer effectively captures the call.
 
@@ -29,6 +29,7 @@ defmodule Contexir.Dispatch do
   """
 
   @execution_key :contexir_execution_plan
+  @current_call_key :contexir_current_call
 
   defp extract_ctx(args) do
     case args do
@@ -95,20 +96,23 @@ defmodule Contexir.Dispatch do
     execution_plan = build_plan(layers, module, fun)
 
     old_execution_plan = Process.get(@execution_key)
+    old_current_call = Process.get(@current_call_key)
     Process.put(@execution_key, execution_plan)
+    Process.put(@current_call_key, {module, fun})
 
     try do
       continue(module, fun, args)
     after
       Contexir.Context.set_ctx(old_ctx)
       Process.put(@execution_key, old_execution_plan)
+      Process.put(@current_call_key, old_current_call)
     end
   end
 
   @doc """
   Advances the current execution to the next layer or to the primary function.
 
-  `continue/3` must be called **inside an `:around` partial** to delegate
+  `continue/3` can be called **inside an `:around` partial** to delegate
   control to the next layer in the chain. If there are no more `:around`
   layers left, it executes all `:before` and `:after` phases and finally
   calls the primary function.
@@ -118,14 +122,14 @@ defmodule Contexir.Dispatch do
 
   ## Example
 
-      defpartial Account.withdraw(acc, amt, ctx), mode: :around do
+      defpartial Account.withdraw(acc, amt, _ctx), mode: :around do
         IO.puts("Start")
-        result = continue(Account, :withdraw, [acc, amt, ctx])
+        result = continue(Account, :withdraw, [acc, amt])
         IO.puts("End")
         result
       end
 
-  If an `:around` partial does **not** call `continue/3`, execution
+  If an `:around` partial does **not** call `continue`, execution
   halts at that layer and returns.
 
   This function is used within Contexir’s layer DSL and
@@ -154,6 +158,27 @@ defmodule Contexir.Dispatch do
         Process.put(@execution_key, {rest, before, after_})
         ctx = Contexir.Context.get_ctx()
         apply(current, fun, [module, :around | args] ++ [ctx])
+    end
+  end
+
+  @doc """
+  Advances the current execution using the module and function being refined.
+
+  This shorthand is intended for `:around` partials:
+
+      defpartial Account.withdraw(account, amount, _ctx), mode: :around do
+        continue([account, amount])
+      end
+
+  It is equivalent to `continue(Account, :withdraw, [account, amount])`.
+  """
+  def continue(args) when is_list(args) do
+    case Process.get(@current_call_key) do
+      {module, fun} ->
+        continue(module, fun, args)
+
+      nil ->
+        raise RuntimeError, "continue/1 can only be called during Contexir dispatch"
     end
   end
 end

@@ -14,22 +14,18 @@ defmodule Examples.DeclarativeContext.Report do
 end
 
 deflayer Examples.DeclarativeContext.InternalAudience do
-  defpartial Examples.DeclarativeContext.Report.build(report, _ctx), mode: :around do
-    continue(
-      Examples.DeclarativeContext.Report,
-      :build,
-      [%{report | sections: report.sections ++ [:margin_notes]}]
-    )
+  refine Examples.DeclarativeContext.Report do
+    defpartial build(report, _ctx), mode: :around do
+      continue([%{report | sections: report.sections ++ [:margin_notes]}])
+    end
   end
 end
 
 deflayer Examples.DeclarativeContext.ExecutiveSummary do
-  defpartial Examples.DeclarativeContext.Report.build(report, _ctx), mode: :around do
-    continue(
-      Examples.DeclarativeContext.Report,
-      :build,
-      [%{report | sections: [:summary | report.sections]}]
-    )
+  refine Examples.DeclarativeContext.Report do
+    defpartial build(report, _ctx), mode: :around do
+      continue([%{report | sections: [:summary | report.sections]}])
+    end
   end
 end
 

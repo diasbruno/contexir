@@ -15,7 +15,7 @@ defmodule Contexir do
 
   A *layer* is a module that can refine existing functions using *partial definitions*:
 
-  - `:around` — wraps the next layer or primary function (must call `continue/3` to proceed)
+  - `:around` — wraps the next layer or primary function (call `continue/1` to proceed)
   - `:before` — runs before the main function
   - `:after` — runs after the main function returns
 
@@ -26,7 +26,7 @@ defmodule Contexir do
   ## Example
 
       defmodule Account do
-        use Contexir.Base
+        use Contexir
 
         def withdraw(acc, amt, _ctx) do
           IO.puts("primary")
@@ -35,19 +35,21 @@ defmodule Contexir do
       end
 
       deflayer LoggingLayer do
-        defpartial Account.withdraw(acc, amt, ctx), mode: :before do
-          IO.puts("[BEFORE] Logging withdrawal of \#{amt}")
-        end
+        refine Account do
+          defpartial withdraw(_acc, amt, _ctx), mode: :before do
+            IO.puts("[BEFORE] Logging withdrawal of \#{amt}")
+          end
 
-        defpartial Account.withdraw(acc, amt, ctx), mode: :around do
-          IO.puts("[AROUND] Start transaction")
-          result = continue(Account, :withdraw, [acc, amt, ctx])
-          IO.puts("[AROUND] End transaction")
-          result
-        end
+          defpartial withdraw(acc, amt, _ctx), mode: :around do
+            IO.puts("[AROUND] Start transaction")
+            result = continue([acc, amt])
+            IO.puts("[AROUND] End transaction")
+            result
+          end
 
-        defpartial Account.withdraw(_acc, _amt, _ctx), mode: :after do
-          IO.puts("[AFTER] Completed")
+          defpartial withdraw(_acc, _amt, _ctx), mode: :after do
+            IO.puts("[AFTER] Completed")
+          end
         end
       end
 
@@ -71,7 +73,7 @@ defmodule Contexir do
 
   | Phase | Direction | Description |
   |--------|------------|-------------|
-  | `:around` | outer → inner | Wraps the rest of the call chain. Must call `continue/3`. |
+  | `:around` | outer → inner | Wraps the rest of the call chain. Call `continue/1`. |
   | `:before` | outer → inner | Runs before the primary function. |
   | `:primary` | — | The original function being refined. |
   | `:after` | inner → outer | Runs after the primary function returns. |

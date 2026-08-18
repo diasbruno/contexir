@@ -52,18 +52,20 @@ A layer defines partial behavior for an existing function.
 import Contexir.Layer
 
 deflayer LoggingLayer do
-  defpartial Account.withdraw(_account, amount, _ctx), mode: :before do
-    IO.puts("withdrawing #{amount}")
-  end
+  refine Account do
+    defpartial withdraw(_account, amount, _ctx), mode: :before do
+      IO.puts("withdrawing #{amount}")
+    end
 
-  defpartial Account.withdraw(account, amount, _ctx), mode: :around do
-    result = continue(Account, :withdraw, [account, amount])
-    IO.puts("new balance: #{result.balance}")
-    result
-  end
+    defpartial withdraw(account, amount, _ctx), mode: :around do
+      result = continue([account, amount])
+      IO.puts("new balance: #{result.balance}")
+      result
+    end
 
-  defpartial Account.withdraw(_account, _amount, _ctx), mode: :after do
-    IO.puts("withdrawal complete")
+    defpartial withdraw(_account, _amount, _ctx), mode: :after do
+      IO.puts("withdrawal complete")
+    end
   end
 end
 ```
@@ -72,11 +74,11 @@ Supported partial modes:
 
 | Mode | Description |
 | --- | --- |
-| `:around` | Wraps the next layer or primary function. Call `continue/3` to proceed. |
+| `:around` | Wraps the next layer or primary function. Call `continue/1` to proceed. |
 | `:before` | Runs before the primary function. |
 | `:after` | Runs after the primary function returns. |
 
-An `:around` partial may short-circuit the call by not calling `continue/3`.
+An `:around` partial may short-circuit the call by not calling `continue/1`.
 
 ### Dynamic Activation
 
