@@ -42,6 +42,11 @@ defmodule ContexirTriggersTest do
       log("failing child primary #{Contexir.Context.get_ctx().request_id}")
       raise "nested failure"
     end
+
+    def short_circuit(acc, _ctx) do
+      log("short primary")
+      acc
+    end
   end
 
   deflayer BeforeAfter do
@@ -62,6 +67,18 @@ defmodule ContexirTriggersTest do
     defpartial ContexirTriggersTest.Target.execute(_acc, _ctx), mode: :after do
       x = Process.get(:target) || 0
       Process.put(:target, x - 1)
+    end
+  end
+
+  deflayer PredicateAroundLayer, when: fn _mod, _fun, _args, ctx -> ctx[:enabled] end do
+    defpartial ContexirTriggersTest.Target.execute(acc, _ctx), mode: :around do
+      %{string: s} = acc
+
+      continue(
+        ContexirTriggersTest.Target,
+        :execute,
+        [%{string: s <> " predicate"}]
+      )
     end
   end
 
@@ -196,6 +213,21 @@ defmodule ContexirTriggersTest do
     end
   end
 
+  deflayer ShortCircuitLayer do
+    defpartial ContexirTriggersTest.Target.short_circuit(acc, _ctx), mode: :around do
+      ContexirTriggersTest.Target.log("short around")
+      %{acc | string: acc.string <> " captured"}
+    end
+
+    defpartial ContexirTriggersTest.Target.short_circuit(_acc, _ctx), mode: :before do
+      ContexirTriggersTest.Target.log("short before")
+    end
+
+    defpartial ContexirTriggersTest.Target.short_circuit(_acc, _ctx), mode: :after do
+      ContexirTriggersTest.Target.log("short after")
+    end
+  end
+
   deflayer PredicateLayer, when: fn _mod, _fun, _args, ctx -> ctx[:enabled] end do
     defpartial ContexirTriggersTest.Target.execute(acc, _ctx), mode: :before do
       acc
@@ -238,6 +270,34 @@ defmodule ContexirTriggersTest do
     x = Process.get(:target)
     assert x == 0
     assert b == "start_string around before-after_part target_part"
+  end
+
+  test "predicate layers activate only when predicate matches context" do
+    %{string: active} =
+      Contexir.with_layers(
+        [ContexirTriggersTest.PredicateAroundLayer],
+        ContexirTriggersTest.Target.execute(%{string: "start"}, %{enabled: true})
+      )
+
+    %{string: inactive} =
+      Contexir.with_layers(
+        [ContexirTriggersTest.PredicateAroundLayer],
+        ContexirTriggersTest.Target.execute(%{string: "start"}, %{enabled: false})
+      )
+
+    assert active == "start predicate target_part"
+    assert inactive == "start target_part"
+  end
+
+  test "around partial can short-circuit without before after or primary" do
+    Process.delete(:contexir_order)
+
+    assert Contexir.with_layers(
+             [ContexirTriggersTest.ShortCircuitLayer],
+             ContexirTriggersTest.Target.short_circuit(%{string: "start"}, %{})
+           ) == %{string: "start captured"}
+
+    assert Process.get(:contexir_order) == ["short around"]
   end
 
   test "runs around before primary after in layer order" do
@@ -391,6 +451,25 @@ defmodule ContexirTriggersTest do
         [ContexirTriggersTest.RequiresParent],
         ContexirTriggersTest.Target.execute(%{string: "start"}, %{})
       )
+    end
+  end
+
+  test "activate and deactivate update active layers" do
+    try do
+      Contexir.Context.activate(ContexirTriggersTest.Outer)
+      Contexir.Context.activate(ContexirTriggersTest.Inner)
+
+      assert Contexir.Context.active_layers() == [
+               ContexirTriggersTest.Inner,
+               ContexirTriggersTest.Outer
+             ]
+
+      Contexir.Context.deactivate(ContexirTriggersTest.Inner)
+
+      assert Contexir.Context.active_layers() == [ContexirTriggersTest.Outer]
+    after
+      Contexir.Context.deactivate(ContexirTriggersTest.Inner)
+      Contexir.Context.deactivate(ContexirTriggersTest.Outer)
     end
   end
 end

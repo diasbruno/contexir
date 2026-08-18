@@ -35,9 +35,17 @@ defmodule ContexirContextActivationTest do
     end
   end
 
+  deflayer RequiresMobileLayer do
+    requires(ContexirContextActivationTest.MobileLayer)
+  end
+
   defcontext ApplicationContext do
     layer(ContexirContextActivationTest.MobileLayer, when: &(&1.network == :cellular))
     layer(ContexirContextActivationTest.LowBatteryLayer, when: &(&1.battery < 20))
+  end
+
+  defcontext InvalidContext do
+    layer(ContexirContextActivationTest.RequiresMobileLayer, when: & &1.enabled)
   end
 
   test "context helpers read and update process-local context" do
@@ -55,6 +63,20 @@ defmodule ContexirContextActivationTest do
     assert Contexir.Context.current() == %{}
   end
 
+  test "legacy context helpers read set and update context" do
+    Contexir.Context.set_ctx(%{count: 1})
+
+    try do
+      assert Contexir.Context.get_ctx() == %{count: 1}
+
+      Contexir.Context.update_ctx(&Map.update!(&1, :count, fn count -> count + 1 end))
+
+      assert Contexir.Context.get_ctx() == %{count: 2}
+    after
+      Contexir.Context.set_ctx(%{})
+    end
+  end
+
   test "resolves context rules into active layers" do
     assert Contexir.Layer.resolve_context!(
              ContexirContextActivationTest.ApplicationContext,
@@ -68,6 +90,21 @@ defmodule ContexirContextActivationTest do
              ContexirContextActivationTest.ApplicationContext,
              %{network: :wifi, battery: 90}
            ) == []
+  end
+
+  test "resolve_context returns composition errors" do
+    assert Contexir.Layer.resolve_context(
+             ContexirContextActivationTest.InvalidContext,
+             %{enabled: true}
+           ) ==
+             {:error,
+              {:missing_requirements,
+               [
+                 %{
+                   layer: ContexirContextActivationTest.RequiresMobileLayer,
+                   requires: ContexirContextActivationTest.MobileLayer
+                 }
+               ]}}
   end
 
   test "with_context activates layers selected by context rules" do
@@ -124,6 +161,24 @@ defmodule ContexirContextActivationTest do
     )
   end
 
+  test "with_scope restores context and layers after exceptions" do
+    Contexir.Context.with_scope([ContexirContextActivationTest.MobileLayer], %{outer: true}, fn ->
+      assert_raise RuntimeError, "boom", fn ->
+        Contexir.Context.with_scope(
+          [ContexirContextActivationTest.LowBatteryLayer],
+          %{inner: true},
+          fn -> raise "boom" end
+        )
+      end
+
+      assert Contexir.Context.current() == %{outer: true}
+      assert Contexir.Context.active_layers() == [ContexirContextActivationTest.MobileLayer]
+    end)
+
+    assert Contexir.Context.current() == %{}
+    assert Contexir.Context.active_layers() == []
+  end
+
   test "Contexir.Task inherits context and active layers" do
     Contexir.Context.with_scope(
       [ContexirContextActivationTest.MobileLayer],
@@ -149,6 +204,34 @@ defmodule ContexirContextActivationTest do
                  }
       end
     )
+  end
+
+  test "Contexir.Task failure does not leak scope into caller" do
+    old_trap_exit = Process.flag(:trap_exit, true)
+
+    try do
+      ExUnit.CaptureLog.capture_log(fn ->
+        Contexir.Context.with_scope(
+          [ContexirContextActivationTest.MobileLayer],
+          %{request_id: :parent},
+          fn ->
+            task =
+              Contexir.Task.async(fn ->
+                Contexir.Context.put(:child_only, true)
+                Contexir.Context.activate(ContexirContextActivationTest.LowBatteryLayer)
+                raise "task failed"
+              end)
+
+            assert catch_exit(Contexir.Task.await(task))
+
+            assert Contexir.Context.current() == %{request_id: :parent}
+            assert Contexir.Context.active_layers() == [ContexirContextActivationTest.MobileLayer]
+          end
+        )
+      end)
+    after
+      Process.flag(:trap_exit, old_trap_exit)
+    end
   end
 
   test "Contexir.Task async module function arity inherits scope" do
