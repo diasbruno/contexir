@@ -15,7 +15,7 @@ Add Contexir to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:contexir, "0.2.1"}
+    {:contexir, "0.3.0"}
   ]
 end
 ```
