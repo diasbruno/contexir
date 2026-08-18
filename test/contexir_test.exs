@@ -1,12 +1,8 @@
-# test/contexir_test.exs
 defmodule ContexirTest do
   use ExUnit.Case, async: false
   import Contexir.Layer
   require Contexir
 
-  #
-  # Setup base module and layers
-  #
   defmodule Account do
     use Contexir
 
@@ -29,17 +25,11 @@ defmodule ContexirTest do
     end
   end
 
-  #
-  # Tests
-  #
-
-  # @tag :skip
   test "plain function call" do
     %{balance: b} = ContexirTest.Account.withdraw(%{balance: 100}, 40, %{user: "Alice"})
     assert b == 60
   end
 
-  # @tag :skip
   test "run simple layer" do
     layers = [ContexirTest.GiveHundred]
 
@@ -52,7 +42,6 @@ defmodule ContexirTest do
     assert b == 160
   end
 
-  # @tag :skip
   test "run 2 layers" do
     layers = [ContexirTest.GiveHundred, ContexirTest.TakeTenPercent]
 
