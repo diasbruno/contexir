@@ -28,10 +28,10 @@ Add **Contexir** to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:contexir, "0.1.6"}
+    {:contexir, "0.1.8"}
   ]
 end
-````
+```
 
 Then fetch the dependency:
 
@@ -44,6 +44,9 @@ mix deps.get
 ## 🧩 Basic Example
 
 ```elixir
+import Contexir.Layer
+require Contexir
+
 defmodule Account do
   use Contexir
 
@@ -70,9 +73,10 @@ deflayer LoggingLayer do
   end
 end
 
-Contexir.with_layers [LoggingLayer] do
+Contexir.with_layers(
+  [LoggingLayer],
   Account.withdraw(%{balance: 1000}, 100, %{})
-end
+)
 ```
 
 **Output:**
@@ -123,10 +127,80 @@ deflayer SecureLayer do
   use_layers [AuthLayer, LoggingLayer]
 end
 
-Contexir.with_layers [SecureLayer] do
-  # Equivalent to activating both AuthLayer and LoggingLayer
-end
+Contexir.with_layers(
+  [SecureLayer],
+  Checkout.submit(cart, %{user: user})
+)
 ```
+
+Layers can also declare relationships that are validated before activation:
+
+```elixir
+deflayer SecureCheckout do
+  requires Authentication
+  conflicts_with GuestCheckout
+  before Audit
+end
+
+Contexir.Layer.resolve([Authentication, SecureCheckout, Audit])
+#=> {:ok, [Authentication, SecureCheckout, Audit]}
+```
+
+---
+
+## 🧠 Declarative Context Activation
+
+Use `defcontext` when layers should be selected from context values:
+
+```elixir
+defcontext AppContext do
+  layer MobileLayout, when: &(&1.network == :cellular)
+  layer LowBattery, when: &(&1.battery < 20)
+end
+
+Contexir.with_context(
+  AppContext,
+  %{network: :cellular, battery: 10},
+  Page.render(%{layout: :desktop}, %{})
+)
+```
+
+---
+
+## ⚡ Task Propagation
+
+Regular BEAM processes do not inherit Contexir context or active layers. Use
+`Contexir.Task` when a task should run with the caller's current Contexir scope:
+
+```elixir
+Contexir.Context.with_scope([TraceLayer], %{request_id: "req-123"}, fn ->
+  task =
+    Contexir.Task.async(fn ->
+      Contexir.with_layers([], Worker.run("job", Contexir.Context.current()))
+    end)
+
+  Contexir.Task.await(task)
+end)
+```
+
+---
+
+## 📚 Runnable Examples
+
+The `examples/` directory contains small scripts for the main APIs:
+
+```bash
+mix run examples/basic_layers.exs
+```
+
+Available examples:
+
+* `examples/basic_layers.exs`
+* `examples/composition_resolution.exs`
+* `examples/declarative_context.exs`
+* `examples/task_propagation.exs`
+* `examples/checkout_flow.exs` — end-to-end example combining context rules,
+  composition validation, layered dispatch, and task propagation.
 
 ---
 
@@ -155,9 +229,10 @@ Contexir brings these ideas to Elixir — leveraging the BEAM’s process isolat
 
 ## 🧰 Roadmap
 
-* [ ] Layer predicates for context-based activation
-* [ ] Layer priorities
-* [ ] Async execution (experimental)
+* [x] Layer predicates for context-based activation
+* [x] Declarative context activation
+* [x] Task scope propagation
+* [ ] Precedence ordering and cycle detection
 * [ ] Debug/tracing integration
 
 ---
